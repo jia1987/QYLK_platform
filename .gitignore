@@ -35,7 +35,10 @@ Thumbs.db
 技术资料/RKDevTool_v3.30_for_window.zip
 技术资料/win_x64_DriverAssitant/
 
-# 构建日志
+
+# 构建/运行日志
 *.log
-cfg.txt
-bld.txt
+cfg*.txt
+bld*.txt
+app_err.txt
+app_out.txt
