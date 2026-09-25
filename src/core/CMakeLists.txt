@@ -1,6 +1,9 @@
 add_library(massage_core STATIC
   crc16.cpp
   frame_codec.cpp
+  profile.cpp
+  head_state.cpp
+  bus_scheduler.cpp
 )
 
 # 头文件以 core/xxx.h 形式引用

@@ -38,9 +38,12 @@ ctest --test-dir M:\build -C Debug --output-on-failure
 ## 里程碑
 
 - [x] **M1 协议核心层**：CRC16/MODBUS（例帧实算验证）、帧编解码（防御性越界拒绝）、字节流同步器、71 项单测全绿、从机模拟器
-- [ ] **M2 应用骨架**：BusScheduler 轮询调度、HeadModel/状态机、ProfileEngine 曲线引擎、ISerialPort + Qt 接入
-- [ ] **M3 QML 界面**：主界面 1:1 还原原型（量程修正 10–50Hz）、设置面板 + PIN、绑定/维护模式
-- [ ] **M4 合规与审计**：SQLite 审计追踪、故障复位流程、IEC 62304 文档链、WSL Qt5.12 终验
+- [x] **M2 核心逻辑**（纯 C++17 零 Qt 依赖，260 项校验全绿）：
+  - `profile.*` 曲线引擎：恒频/扫频(10s三角波)/阶频(20s梯形波)，D4 冻结常量，闭环下限→滑行段映射
+  - `head_state.*` 治疗头状态机：Absent/Idle/Starting/Running/Paused/Stopping/Fault，滑行停止+缓启动恢复、倒计时冻结、故障手动复位、应答拒绝安全回退、失联冻结告警、运行中改参差值语义
+  - `bus_scheduler.*` 总线调度：半双工一问一答、控制帧插队、超时重试×3、连续5周期失败判离线、应答严格匹配、时钟/传输注入式全离线单测
+- [ ] **M3 应用与界面**：ISerialPort Qt 适配器（QSerialPort）、应用装配层、QML 主界面 1:1 还原原型（量程修正 10–50Hz）、设置面板 + PIN、绑定/维护模式
+- [ ] **M4 合规与审计**：SQLite 审计追踪、IEC 62304 文档链、WSL Qt5.12 终验
 
 ## 关键约束（详见设计文档）
 
