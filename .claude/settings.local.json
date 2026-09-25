@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell($lines = Get-Content \"C:\\\\Users\\\\pengp\\\\.claude\\\\projects\\\\E------------\\\\cf16ed8d-ddbc-44ef-ab78-b76ce864a09a.jsonl\"; $l = $lines[8]; $idx = $l.IndexOf\\('grilling'\\); $start = [Math]::Max\\(0, $idx - 200\\); $len = [Math]::Min\\(3000, $l.Length - $start\\); $l.Substring\\($start, $len\\))",
+      "PowerShell($lines = Get-Content \"C:\\\\Users\\\\pengp\\\\.claude\\\\projects\\\\E------------\\\\cf16ed8d-ddbc-44ef-ab78-b76ce864a09a.jsonl\"; foreach \\($i in 23,24,25\\) { $l = $lines[$i]; $idx = $l.IndexOf\\('grilling'\\); if \\($idx -ge 0\\) { $start = [Math]::Max\\(0, $idx - 300\\); $len = [Math]::Min\\(2500, $l.Length - $start\\); Write-Output \"=== line $\\($i+1\\) ===\"; Write-Output $l.Substring\\($start, $len\\) } })",
+      "PowerShell($f = \"E:\\\\个人开发\\\\台式按摩仪\\\\技术方案\\\\台式设备交互界面-单文件离线版.html\"; \\(Get-Content $f -TotalCount 100 -Encoding UTF8\\) -join \"`n\")",
+      "PowerShell(Get-Content *、)",
+      "PowerShell(Out-File *)",
+      "PowerShell(git *)",
+      "PowerShell(foreach \\($t in 'cmake','g++','gcc','cl','ninja','mingw32-make','make','qmake'\\) { $c = Get-Command $t -ErrorAction SilentlyContinue; if \\($c\\) { Write-Output \"$t => $\\($c.Source\\)\" } else { Write-Output \"$t => MISSING\" } }; python -c \"import serial; print\\('pyserial ok', serial.__version__\\)\" 2>$null; if \\(-not $?\\) { Write-Output 'pyserial MISSING' })",
+      "PowerShell(wsl --status 2>$null | Out-String; wsl -l -v 2>$null | Out-String)",
+      "PowerShell(cmake *)",
+      "PowerShell(pip install *)",
+      "PowerShell(python \"E:\\\\个人开发\\\\台式按摩仪\\\\tests\\\\test_sim_consistency.py\")",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}

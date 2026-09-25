@@ -1,0 +1,36 @@
+# Build artifacts
+build/
+build-*/
+cmake-build-*/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.exe
+*.pdb
+
+# IDE / Qt Creator
+.vs/
+.vscode/
+.idea/
+*.user
+*.pro.user*
+CMakeSettings.json
+CMakeUserPresets.json
+out/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# 厂商烧录工具（非项目工件，体积大）
+技术资料/RKDevTool_v3.30_for_window/
+技术资料/RKDevTool_v3.30_for_window.zip
+技术资料/win_x64_DriverAssitant/
