@@ -1,7 +1,10 @@
 #include "app_core.h"
 
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QMap>
+#include <QProcess>
+#include <QRandomGenerator>
 #include <QStringList>
 #include <QVariantMap>
 
@@ -498,8 +501,196 @@ void AppCore::requestPauseAll() {
 }
 
 void AppCore::showAbout() {
-  emit toast(versionText() + QStringLiteral(" · 设置面板开发中（PIN/绑定/串口）"),
-             QStringLiteral("ok"), 3500);
+  emit toast(versionText(), QStringLiteral("ok"), 3000);
+}
+
+// ================= M3.5：PIN 门禁（决策 D9） =================
+
+namespace {
+QString hashPin(const QString& salt, const QString& pin) {
+  return QString::fromLatin1(
+      QCryptographicHash::hash((salt + pin).toUtf8(), QCryptographicHash::Sha256)
+          .toHex());
+}
+}  // namespace
+
+bool AppCore::pinSet() const { return !cfg_->pinHash.isEmpty(); }
+
+bool AppCore::verifyPin(const QString& pin) {
+  return pinSet() && hashPin(cfg_->pinSalt, pin) == cfg_->pinHash;
+}
+
+bool AppCore::setInitialPin(const QString& pin) {
+  if (pinSet() || pin.length() < 4 || pin.length() > 6) return false;
+  cfg_->pinSalt =
+      QString::number(QRandomGenerator::system()->generate64(), 16);
+  cfg_->pinHash = hashPin(cfg_->pinSalt, pin);
+  cfg_->save();
+  emit pinChanged();
+  emit toast(QStringLiteral("PIN 已设置（设置/维护入口已启用门禁）"),
+             QStringLiteral("ok"), 2500);
+  return true;
+}
+
+bool AppCore::changePin(const QString& oldPin, const QString& newPin) {
+  if (!verifyPin(oldPin)) return false;
+  if (newPin.length() < 4 || newPin.length() > 6) return false;
+  cfg_->pinSalt =
+      QString::number(QRandomGenerator::system()->generate64(), 16);
+  cfg_->pinHash = hashPin(cfg_->pinSalt, newPin);
+  cfg_->save();
+  emit pinChanged();
+  emit toast(QStringLiteral("PIN 已修改"), QStringLiteral("ok"), 2000);
+  return true;
+}
+
+// ================= M3.5：设置持久化 =================
+
+void AppCore::saveIdentity(const QString& hospital, const QString& department) {
+  cfg_->hospital = hospital.trimmed();
+  cfg_->department = department.trimmed();
+  cfg_->save();
+  emit hospChanged();
+  emit toast(QStringLiteral("医院 / 科室信息已保存"), QStringLiteral("ok"), 2000);
+}
+
+void AppCore::saveSerial(const QString& port, int baud) {
+  cfg_->serialPort = port.trimmed();
+  if (baud > 0) cfg_->baudRate = baud;
+  cfg_->save();
+  emit toast(QStringLiteral("串口配置已保存，重启应用后生效"),
+             QStringLiteral("warn"), 3000);
+}
+
+QString AppCore::serialConfigText() const {
+  return cfg_->serialPort.isEmpty()
+             ? QStringLiteral("（模拟总线）")
+             : cfg_->serialPort + QStringLiteral(" @ ") +
+                   QString::number(cfg_->baudRate);
+}
+
+void AppCore::setSystemTime(const QString& isoDateTime) {
+  const QDateTime t = QDateTime::fromString(isoDateTime, Qt::ISODate);
+  if (!t.isValid()) {
+    emit toast(QStringLiteral("时间格式无效（应为 YYYY-MM-DDTHH:MM:SS）"),
+               QStringLiteral("err"), 2500);
+    return;
+  }
+#ifdef Q_OS_LINUX
+  // 目标板：timedatectl（polkit 授权运行用户）；审计时间戳另用单调时钟防污染
+  QProcess p;
+  p.start(QStringLiteral("timedatectl"),
+          {QStringLiteral("set-time"),
+           t.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))});
+  p.waitForFinished(3000);
+  if (p.exitCode() == 0)
+    emit toast(QStringLiteral("系统时间已设置"), QStringLiteral("ok"), 2000);
+  else
+    emit toast(QStringLiteral("设置系统时间失败（需要授权）：") +
+                   QString::fromUtf8(p.readAllStandardError()),
+               QStringLiteral("err"), 4000);
+#else
+  Q_UNUSED(t)
+  emit toast(QStringLiteral("开发平台不修改系统时间；目标板（Linux）可用"),
+             QStringLiteral("warn"), 2500);
+#endif
+}
+
+// ================= M3.5：绑定 / 维护模式（决策 D2） =================
+
+QVariantList AppCore::bindingInfos() const {
+  QVariantList l;
+  for (const HeadItem* h : heads_) {
+    QVariantMap m;
+    m[QStringLiteral("slot")] = h->slotId();
+    m[QStringLiteral("addr")] = h->addr();
+    m[QStringLiteral("type")] = h->headType();
+    m[QStringLiteral("online")] =
+        sched_->deviceOnline(static_cast<std::uint8_t>(h->addr()));
+    l.append(m);
+  }
+  return l;
+}
+
+void AppCore::maintSetType(int slotIndex, const QString& type) {
+  if (slotIndex < 0 || slotIndex >= cfg_->slotList.size()) return;
+  cfg_->slotList[slotIndex].type = type;
+  cfg_->save();
+  if (HeadItem* h = heads_.value(slotIndex, nullptr)) h->setHeadType(type);
+  emit bindingsChanged();
+  emit sysStateChanged();  // header 类型汇总刷新
+  emit toast(cfg_->slotList[slotIndex].slotId + QStringLiteral(" 类型已设为 ") + type,
+             QStringLiteral("ok"), 2000);
+}
+
+bool AppCore::maintSetAddr(int slotIndex, int newAddr) {
+  if (slotIndex < 0 || slotIndex >= cfg_->slotList.size()) return false;
+  if (newAddr < 1 || newAddr > 255) return false;
+  for (int i = 0; i < cfg_->slotList.size(); ++i)
+    if (i != slotIndex && cfg_->slotList[i].addr == newAddr) return false;
+  cfg_->slotList[slotIndex].addr = static_cast<quint8>(newAddr);
+  cfg_->save();
+  emit bindingsChanged();
+  emit toast(QStringLiteral("槽位地址配置已改，重启应用后生效（设备侧地址需用烧录流程同步）"),
+             QStringLiteral("warn"), 3500);
+  return true;
+}
+
+void AppCore::maintProbeZero() {
+  // 地址 0 = 新头出厂默认；正常运行的总线上不应存在地址 0 响应
+  sched_->enqueueControl(
+      encodeRead(Cmd::ReadInfo, 0).value(),
+      [this](bool ok, Reply, const ReplyPayload&) {
+        emit maintZeroFound(ok);
+      });
+}
+
+void AppCore::maintBurn(int slotIndex) {
+  if (slotIndex < 0 || slotIndex >= cfg_->slotList.size()) return;
+  const SlotConfig target = cfg_->slotList[slotIndex];
+
+  // 安全联锁①：其余绑定头必须全部离线。
+  // 0xAA 是广播性生效的（谁收到谁改地址）——若有其他头在线会被一起改写！
+  for (const HeadItem* h : heads_) {
+    if (h->slotId() == target.slotId) continue;
+    if (sched_->deviceOnline(static_cast<std::uint8_t>(h->addr()))) {
+      emit maintBurnResult(
+          false, QStringLiteral("联锁拒绝：其他治疗头仍在线。0xAA 会把在线头一起改写，"
+                                "请仅保留新头（拔除其余治疗头）后重试。"));
+      return;
+    }
+  }
+  // 安全联锁②：必须先探到地址 0 的新头
+  sched_->enqueueControl(
+      encodeRead(Cmd::ReadInfo, 0).value(),
+      [this, target](bool zeroOk, Reply, const ReplyPayload&) {
+        if (!zeroOk) {
+          emit maintZeroFound(false);
+          emit maintBurnResult(
+              false, QStringLiteral("未检测到地址 0 的设备：请确认新头已接入且为出厂状态。"));
+          return;
+        }
+        emit maintZeroFound(true);
+        const Frame burn = encodeConfigAddress(
+            target.addr, defaults::kClosedLoop, defaults::kStallTime,
+            defaults::kPolePairs);
+        sched_->enqueueControl(
+            burn, [this, target](bool ok, Reply, const ReplyPayload& p) {
+              const bool ackOk =
+                  ok && std::get<AckReply>(p).flag == AckFlag::Ok;
+              if (ackOk) {
+                emit toast(target.slotId +
+                               QStringLiteral(" 烧录地址 %1 成功，已可绑定使用")
+                                   .arg(target.addr),
+                           QStringLiteral("ok"), 3000);
+                emit bindingsChanged();
+              }
+              emit maintBurnResult(
+                  ackOk,
+                  ackOk ? QString()
+                        : QStringLiteral("烧录失败（设备拒绝或无应答）"));
+            });
+      });
 }
 
 void AppCore::headAction(const QString& slotId, const QString& action) {

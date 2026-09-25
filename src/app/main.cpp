@@ -65,10 +65,19 @@ int main(int argc, char* argv[]) {
 #endif
   }
   if (!transport) {
-    // 模拟总线：按原型演示 L2 未接入，其余 5 头在位
+    // 模拟总线：默认按原型演示 L2 未接入、其余 5 头在位。
+    // MASSAGE_MOCK_PRESENT="0" 等可覆盖在位地址表（维护/烧录流程演练用：
+    // 如只留地址 0 的新头，模拟换头场景）
     std::vector<std::uint8_t> present;
-    for (const app::SlotConfig& s : cfg.slotList)
-      if (s.slotId != QLatin1String("L2")) present.push_back(s.addr);
+    const QByteArray mockEnv = qgetenv("MASSAGE_MOCK_PRESENT");
+    if (!mockEnv.isEmpty()) {
+      const QList<QByteArray> parts = mockEnv.split(',');
+      for (const QByteArray& p : parts)
+        present.push_back(static_cast<std::uint8_t>(p.toUInt()));
+    } else {
+      for (const app::SlotConfig& s : cfg.slotList)
+        if (s.slotId != QLatin1String("L2")) present.push_back(s.addr);
+    }
     mock = std::make_unique<app::MockBus>(present);
     transport = mock.get();
   }

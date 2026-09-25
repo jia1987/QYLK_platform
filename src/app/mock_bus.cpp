@@ -117,6 +117,35 @@ void MockBus::handle(const Frame& f) {
     return;  // 广播无应答
   }
 
+  // 0xAA 地址配置：真实语义是「谁收到谁改」（协议严禁上总线广播的原因）。
+  // 模拟器忠实复现：所有在位头都会执行——维护联锁（其余头离线）因此可被测到。
+  if (cmd == static_cast<std::uint8_t>(Cmd::ConfigAddress)) {
+    const std::uint8_t newAddr = addr;
+    std::vector<std::uint8_t> presentAddrs;
+    for (const auto& kv : heads_)
+      if (kv.second.present) presentAddrs.push_back(kv.first);
+    for (std::uint8_t oldA : presentAddrs) {
+      auto it = heads_.find(oldA);
+      if (it == heads_.end()) continue;
+      MHead h = it->second;
+      if (h.rpm > 5.0) {  // 运行中拒绝改地址
+        enqueueReply(0x11, oldA, 0xEE, 0x00, 0x00);
+        continue;
+      }
+      h.closedLoop = (f[3] & 0x10) != 0;
+      h.polePairs = f[5];
+      if (newAddr != oldA) {
+        heads_.erase(it);
+        h.addr = newAddr;
+        heads_[newAddr] = h;
+      } else {
+        it->second = h;
+      }
+      enqueueReply(0x11, newAddr, 0xAA, 0x00, 0x00);
+    }
+    return;
+  }
+
   auto it = heads_.find(addr);
   if (it == heads_.end() || !it->second.present) return;  // 不在位：静默
   MHead& h = it->second;
@@ -130,16 +159,6 @@ void MockBus::handle(const Frame& f) {
         applyCtrl(h, (f[3] << 8) | f[4], status);
       }
       enqueueReply(0x11, addr, 0xAA, 0x00, 0x00);
-      break;
-    }
-    case static_cast<std::uint8_t>(Cmd::ConfigAddress): {
-      if (h.rpm > 5.0)
-        enqueueReply(0x11, addr, 0xEE, 0x00, 0x00);  // 运行中拒绝改配置
-      else {
-        h.closedLoop = (f[3] & 0x10) != 0;
-        h.polePairs = f[5];
-        enqueueReply(0x11, addr, 0xAA, 0x00, 0x00);
-      }
       break;
     }
     case static_cast<std::uint8_t>(Cmd::ConfigParams):

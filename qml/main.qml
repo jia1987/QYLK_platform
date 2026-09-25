@@ -123,7 +123,7 @@ Window {
                 id: gearMa
                 anchors.fill: parent
                 hoverEnabled: true
-                onClicked: App.showAbout()
+                onClicked: settingsOverlay.open()
             }
         }
 
@@ -358,6 +358,13 @@ Window {
                     toastModel.remove(0);
             }
         }
+    }
+
+    // ================= 设置面板（PIN 门禁 + 绑定/维护） =================
+    SettingsOverlay {
+        id: settingsOverlay
+        anchors.fill: parent
+        z: 250
     }
 
     // ================= 确认弹窗 =================

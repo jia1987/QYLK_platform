@@ -33,6 +33,7 @@ class AppCore : public QObject {
   Q_PROPERTY(bool anyOutput READ anyOutput NOTIFY sysStateChanged)
   Q_PROPERTY(QString modeDesc READ modeDesc NOTIFY selectionChanged)
   Q_PROPERTY(QString versionText READ versionText CONSTANT)
+  Q_PROPERTY(bool pinSet READ pinSet NOTIFY pinChanged)
  public:
   AppCore(AppConfig* cfg, core::ITransport& transport, bool realBus,
           QObject* parent = nullptr);
@@ -69,7 +70,28 @@ class AppCore : public QObject {
   Q_INVOKABLE void requestPauseAll();                     // 全部暂停/继续切换
   Q_INVOKABLE void confirmResponse(bool accepted);
   Q_INVOKABLE QString presetText(int index) const;
-  Q_INVOKABLE void showAbout();  // 齿轮按钮：M3.5 接入 PIN 设置面板前的占位
+  Q_INVOKABLE void showAbout();
+
+  // ---- M3.5 设置面板 / PIN 门禁（决策 D9）----
+  bool pinSet() const;
+  Q_INVOKABLE bool verifyPin(const QString& pin);
+  Q_INVOKABLE bool setInitialPin(const QString& pin);       // 首启强制设置
+  Q_INVOKABLE bool changePin(const QString& oldPin, const QString& newPin);
+  Q_INVOKABLE void saveIdentity(const QString& hospital, const QString& department);
+  Q_INVOKABLE void saveSerial(const QString& port, int baud);  // 重启生效
+  Q_INVOKABLE void setSystemTime(const QString& isoDateTime);  // 仅 Linux（timedatectl）
+  Q_INVOKABLE QString serialConfigText() const;
+  Q_INVOKABLE QString hospitalText() const { return cfg_->hospital; }
+  Q_INVOKABLE QString departmentText() const { return cfg_->department; }
+  Q_INVOKABLE QString serialPortText() const { return cfg_->serialPort; }
+  Q_INVOKABLE int baudRate() const { return cfg_->baudRate; }
+
+  // ---- M3.5 绑定 / 维护模式（决策 D2：0xAA 单头烧录）----
+  Q_INVOKABLE QVariantList bindingInfos() const;  // [{slot,addr,type,online}]
+  Q_INVOKABLE void maintSetType(int slotIndex, const QString& type);
+  Q_INVOKABLE bool maintSetAddr(int slotIndex, int newAddr);  // 改配置，重启生效
+  Q_INVOKABLE void maintProbeZero();   // 探测地址 0（新头出厂默认）
+  Q_INVOKABLE void maintBurn(int slotIndex);  // 带安全联锁的烧录
 
  signals:
   void toast(const QString& msg, const QString& type, int ms);
@@ -79,6 +101,10 @@ class AppCore : public QObject {
   void hospChanged();
   void selectionChanged();
   void presetsChanged();
+  void pinChanged();
+  void bindingsChanged();
+  void maintZeroFound(bool found);
+  void maintBurnResult(bool ok, const QString& msg);
 
  private:
   HeadItem* findBySlot(const QString& slotId) const;

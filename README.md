@@ -73,7 +73,14 @@ Ubuntu（目标板/WSL）：`sudo apt install libqt5serialport5-dev`（Qt 5.12 �
   - QML 主界面 1:1 还原原型：6 卡片（状态着色/选中箭头/波形/进度条/启停按钮组）、中央参数区（预设/模式/步进）、
     底部操作栏、确认弹窗、toast；量程已修正 10–50Hz
   - MockBus 进程内从机仿真（与 Python 模拟器同源行为）；SerialTransport（QSerialPort+StreamFramer）条件编译就绪
-- [ ] **M3.5 设置与运维**：设置面板 + PIN 门禁、绑定/维护模式（0xAA 单头烧录）、医院/科室、系统时间、config 持久化 UI
+- [x] **M3.5 设置与运维**：
+  - 设置面板 + PIN 门禁（SHA256+随机盐，首启强制设置；决策 D9）：系统时间（Linux timedatectl）/
+    医院科室 / 串口配置 / 修改 PIN
+  - 绑定/维护模式：槽位↔地址↔类型列表、换类型、**换头烧录向导**——安全联锁：
+    仅当「地址0新头在线」且「其余绑定头全离线」才允许 0xAA（协议警告：AA 会被总线所有头接收）；
+    MockBus 复现「谁收到谁改」真实语义，联锁有集成测试 `maint_burn` 双场景覆盖
+  - `MASSAGE_MOCK_PRESENT=0` 环境变量可模拟「只接新头」的换头场景供演练
+- [ ] **M3.6 WSL 终验**（待重启后）：Ubuntu 20.04 + Qt 5.12 构建验证、socat 虚拟串口 ↔ Python 模拟器闭环联调
 - [ ] **M4 合规与审计**：SQLite 审计追踪、IEC 62304 文档链、WSL Qt5.12 终验
 
 ## 关键约束（详见设计文档）
