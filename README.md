@@ -37,11 +37,22 @@ ctest --test-dir M:\build-mingw --output-on-failure
 M:\build-mingw\src\app\massage_app.exe
 ```
 
-真实总线（需先用 Qt 维护工具安装 **Qt Serial Port** 附加库，重新配置后自动启用）：
+真实总线（Qt SerialPort 模块已启用）：
 
 ```powershell
 M:\build-mingw\src\app\massage_app.exe --serial COM6        # 或配置 config.json 的 serialPort
 ```
+
+Qt SerialPort 模块安装备忘（MaintenanceTool 组件树可能不显示该模块，用官方归档直装）：
+
+```powershell
+pip install aqtinstall
+python -m aqt install-qt windows desktop 6.9.2 win64_mingw --modules qtserialport --outputdir C:\Qt
+# 装完必须删除构建目录的 CMakeCache.txt 再重新配置（find_package 结果有缓存）
+```
+
+Ubuntu（目标板/WSL）：`sudo apt install libqt5serialport5-dev`（Qt 5.12 自带枚举名 SerialError，
+代码已用无参 lambda 规避 Qt5/Qt6 枚举改名差异）。
 
 ## 模拟器联调
 

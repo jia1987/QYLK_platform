@@ -12,7 +12,9 @@ SerialTransport::SerialTransport(QObject* parent) : QObject(parent) {
     while (framer_.next(f))
       if (replySink) replySink(f);
   });
-  connect(&port_, &QSerialPort::errorOccurred, this, [this](QSerialPort::SerialError) {
+  // 无参 lambda：connect 允许 lambda 参数少于信号——
+  // 规避 Qt5(SerialError) / Qt6.9(SerialPortError) 枚举改名差异
+  connect(&port_, &QSerialPort::errorOccurred, this, [this] {
     if (errorSink) errorSink(port_.errorString());
   });
 }
