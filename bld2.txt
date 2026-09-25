@@ -1,0 +1,3 @@
+﻿[1/4] Automatic MOC for target massage_app
+[2/3] Building CXX object src/app/CMakeFiles/massage_app.dir/app_core.cpp.obj
+[3/3] Linking CXX executable src\app\massage_app.exe

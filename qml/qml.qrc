@@ -1,0 +1,9 @@
+<RCC>
+    <qresource prefix="/">
+        <file>main.qml</file>
+        <file>HeadCard.qml</file>
+        <file>CenterPanel.qml</file>
+        <file>Waveform.qml</file>
+        <file>StepButton.qml</file>
+    </qresource>
+</RCC>

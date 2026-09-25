@@ -18,14 +18,29 @@ tools/simulator/  RS485 从机模拟器（Python，无硬件闭环验证）
 
 ## 构建与测试（Windows 开发机）
 
-⚠ **中文路径坑**：CMake 4.0.2 在中文路径下配置时崩溃（0xC0000409）。
-解决：用 `subst` 映射 ASCII 盘符（每个新终端会话执行一次）：
+⚠ **中文路径坑**：CMake 4.x 在中文路径下配置时崩溃（0xC0000409）。
+解决：用 `subst` 映射 ASCII 盘符（每个新终端会话执行一次）。
+
+⚠ **工具链**：本机 Qt 6.9.2 为 **MinGW 版**（无 msvc 版），应用层必须用 MinGW+Ninja 构建；
+核心/测试同时兼容 MSVC（纯 C++17）。两套构建目录互不干扰。
 
 ```powershell
 subst M: "E:\个人开发\台式按摩仪"
-cmake -S M:\ -B M:\build -G "Visual Studio 17 2022" -A x64
-cmake --build M:\build --config Debug
-ctest --test-dir M:\build -C Debug --output-on-failure
+$env:PATH = "C:\Qt\Tools\mingw1310_64\bin;C:\Qt\Tools\Ninja;C:\Qt\6.9.2\mingw_64\bin;$env:PATH"
+
+# 核心+测试+应用（MinGW，与目标板同为 GCC 系）
+cmake -S M:\ -B M:\build-mingw -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=C:/Qt/6.9.2/mingw_64
+cmake --build M:\build-mingw
+ctest --test-dir M:\build-mingw --output-on-failure
+
+# 运行（默认模拟总线；5 头在位、L2 演示未接入）
+M:\build-mingw\src\app\massage_app.exe
+```
+
+真实总线（需先用 Qt 维护工具安装 **Qt Serial Port** 附加库，重新配置后自动启用）：
+
+```powershell
+M:\build-mingw\src\app\massage_app.exe --serial COM6        # 或配置 config.json 的 serialPort
 ```
 
 ## 模拟器联调
@@ -42,7 +57,12 @@ ctest --test-dir M:\build -C Debug --output-on-failure
   - `profile.*` 曲线引擎：恒频/扫频(10s三角波)/阶频(20s梯形波)，D4 冻结常量，闭环下限→滑行段映射
   - `head_state.*` 治疗头状态机：Absent/Idle/Starting/Running/Paused/Stopping/Fault，滑行停止+缓启动恢复、倒计时冻结、故障手动复位、应答拒绝安全回退、失联冻结告警、运行中改参差值语义
   - `bus_scheduler.*` 总线调度：半双工一问一答、控制帧插队、超时重试×3、连续5周期失败判离线、应答严格匹配、时钟/传输注入式全离线单测
-- [ ] **M3 应用与界面**：ISerialPort Qt 适配器（QSerialPort）、应用装配层、QML 主界面 1:1 还原原型（量程修正 10–50Hz）、设置面板 + PIN、绑定/维护模式
+- [x] **M3 主界面**（Qt 6.9 MinGW 构建，模拟总线可交互）：
+  - 应用装配层 AppCore：BusScheduler + 6×TreatmentHead 编排、QML 属性/命令/事件桥、确认弹窗与 toast 流
+  - QML 主界面 1:1 还原原型：6 卡片（状态着色/选中箭头/波形/进度条/启停按钮组）、中央参数区（预设/模式/步进）、
+    底部操作栏、确认弹窗、toast；量程已修正 10–50Hz
+  - MockBus 进程内从机仿真（与 Python 模拟器同源行为）；SerialTransport（QSerialPort+StreamFramer）条件编译就绪
+- [ ] **M3.5 设置与运维**：设置面板 + PIN 门禁、绑定/维护模式（0xAA 单头烧录）、医院/科室、系统时间、config 持久化 UI
 - [ ] **M4 合规与审计**：SQLite 审计追踪、IEC 62304 文档链、WSL Qt5.12 终验
 
 ## 关键约束（详见设计文档）
