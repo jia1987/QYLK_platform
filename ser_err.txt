@@ -1,4 +1,0 @@
-串口 COM999 打开失败: ?????????????????（回退到模拟总线）
-qrc:/main.qml:464:9: QML Connections: Implicitly defined onFoo properties in Connections are deprecated. Use this syntax instead: function onFoo(<arguments>) { ... }
-qrc:/main.qml:353:9: QML Connections: Implicitly defined onFoo properties in Connections are deprecated. Use this syntax instead: function onFoo(<arguments>) { ... }
-selectHead L1 -> selected=L1

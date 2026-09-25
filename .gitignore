@@ -40,5 +40,5 @@ Thumbs.db
 *.log
 cfg*.txt
 bld*.txt
-app_err.txt
-app_out.txt
+*_err.txt
+*_out.txt
