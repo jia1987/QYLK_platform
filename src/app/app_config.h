@@ -28,6 +28,10 @@ class AppConfig {
   QString department;
   QString pinSalt;
   QString pinHash;             // 设置面板 PIN（M3.5 启用）
+  // ---- M4a 审计（决策 D13–D22）----
+  QString auditDbPath;         // 空 = AppDataLocation/audit.db（部署路径随 T3 定）
+  int auditQuotaMb = 1024;     // D16 水位配额（永不删除，仅提示导出归档）
+  qint64 currentOperatorId = 0;// D14 记住上次选择的操作员（0 = 未指定）
 
   static QString configPath();
   static AppConfig loadOrCreate();

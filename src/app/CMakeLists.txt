@@ -12,9 +12,11 @@ add_executable(massage_app
 )
 
 target_include_directories(massage_app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(massage_app PRIVATE APP_VERSION="${PROJECT_VERSION}")
 
 target_link_libraries(massage_app PRIVATE
   massage_core
+  massage_audit
   Qt${QT_VERSION_MAJOR}::Core
   Qt${QT_VERSION_MAJOR}::Gui
   Qt${QT_VERSION_MAJOR}::Quick

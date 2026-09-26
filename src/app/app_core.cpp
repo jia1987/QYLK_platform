@@ -8,7 +8,12 @@
 #include <QStringList>
 #include <QVariantMap>
 
+#include "audit/json_mini.h"
 #include "core/frame_codec.h"
+
+#ifndef APP_VERSION
+#define APP_VERSION "0.3.0"
+#endif
 
 namespace massage::app {
 
@@ -26,8 +31,9 @@ QString modeNameOf(Mode m) {
 }  // namespace
 
 AppCore::AppCore(AppConfig* cfg, ITransport& transport, bool realBus,
-                 QObject* parent)
-    : QObject(parent), cfg_(cfg), realBus_(realBus) {
+                 audit::AuditLog* audit, QObject* parent)
+    : QObject(parent), cfg_(cfg), realBus_(realBus), audit_(audit),
+      pinGuard_(auditClock_) {
   // ---- 治疗头 ----
   for (const SlotConfig& s : cfg_->slotList) {
     auto* h = new HeadItem(s, this);
@@ -44,6 +50,14 @@ AppCore::AppCore(AppConfig* cfg, ITransport& transport, bool realBus,
   sched_ = std::make_unique<BusScheduler>(BusConfig{}, transport, clock_);
   sched_->onPresenceChange = [this](std::uint8_t addr, bool online) {
     if (HeadItem* h = findByAddr(addr)) h->deliverPresence(online);
+    // M4a（D24）：在位变化留痕（含 idle 插拔——「不该在位的头出现」必须有记录）
+    if (audit_) {
+      HeadItem* hh = findByAddr(addr);
+      auditLog(audit::cat::Presence,
+               online ? audit::ev::HeadPlugged : audit::ev::HeadUnplugged,
+               hh ? hh->slotId() : QString(), addr,
+               std::string("{") + audit::jbool("online", online) + "}");
+    }
     if (online && !selected_) {
       // 首个上线的头默认选中（原型默认 L1；构造时头尚未上线，选择会落空）
       for (HeadItem* x : heads_) {
@@ -77,7 +91,31 @@ AppCore::AppCore(AppConfig* cfg, ITransport& transport, bool realBus,
   if (realBus_) {
     for (std::uint8_t a : addrs)
       sched_->enqueueControl(encodeCoastStop(a, MotorStatus::DirA));
+    // M4a（D19）：上电清理留痕——风险分析「主机死机→电机失控」路径的审计佐证
+    if (audit_) {
+      std::string arr = "[";
+      for (std::size_t i = 0; i < addrs.size(); ++i) {
+        if (i) arr += ",";
+        arr += std::to_string(addrs[i]);
+      }
+      arr += "]";
+      auditLog(audit::cat::Session, audit::ev::StopAllOnBoot, QString(), 0,
+               std::string("{") + audit::jraw("addrs", arr) + "," +
+                   audit::jstr("note", "上电滑行停止清理（D5）") + "}");
+    }
   }
+
+  // ---- M4a 审计接线（D13：降级醒目告警）----
+  if (audit_) {
+    audit_->onDegradeChanged = [this](bool deg, const std::string& reason) {
+      emit auditStateChanged();
+      emit toast(deg ? QStringLiteral("⚠ 审计日志不可用，已降级文件记录：") +
+                           QString::fromStdString(reason)
+                     : QStringLiteral("审计日志已恢复，兜底记录已回填数据库"),
+                 deg ? QStringLiteral("err") : QStringLiteral("ok"), deg ? 6000 : 2500);
+    };
+  }
+  currentOpId_ = cfg_->currentOperatorId;
 
   // ---- 定时器 ----
   busTimer_.setInterval(10);
@@ -92,10 +130,16 @@ AppCore::AppCore(AppConfig* cfg, ITransport& transport, bool realBus,
     savePend_ = -1;
     emit presetsChanged();
   });
+  snapTimer_.setInterval(30000);  // M4a（D15）：30s 会话快照
+  connect(&snapTimer_, &QTimer::timeout, this, &AppCore::snapshotNow);
+  paramDebounceTimer_.setSingleShot(true);
+  paramDebounceTimer_.setInterval(2000);  // M4a（D15）：改参 2s 防抖
+  connect(&paramDebounceTimer_, &QTimer::timeout, this, &AppCore::flushParamChange);
 
   busTimer_.start();
   logicTimer_.start();
   uiTimer_.start();
+  snapTimer_.start();
   onUiTick();
 
   // 原型默认选中 L1
@@ -157,9 +201,20 @@ void AppCore::onUiTick() {
 }
 
 void AppCore::onHeadEvent(HeadItem* h, int ev) {
+  // M4a（D15/D24）：语义事件全部入审计；toast 维持原型行为
+  const auto& head = h->coreHead();
   switch (static_cast<HeadEvent>(ev)) {
     case HeadEvent::Started: {
-      const auto c = h->coreHead().config();
+      const auto c = head.config();
+      pendingSlot_.clear();          // 新会话开始：丢弃上一轮改参防抖
+      paramDebounceTimer_.stop();
+      auditLog(audit::cat::Therapy, audit::ev::TherapyStart, h->slotId(), h->addr(),
+               std::string("{") + audit::jnum("freq", c.freqHz) + "," +
+                   audit::jnum("mode", static_cast<int>(c.mode)) + "," +
+                   audit::jnum("timeMin", c.timeMin) + "," +
+                   audit::jnum("dir", static_cast<int>(c.dir)) + "," +
+                   audit::jstr("type", h->headType().toStdString()) + "}",
+               currentOpId_);
       emit toast(QStringLiteral("%1 治疗已启动 · %2Hz %3 %4min")
                      .arg(h->slotId())
                      .arg(c.freqHz)
@@ -169,37 +224,59 @@ void AppCore::onHeadEvent(HeadItem* h, int ev) {
       break;
     }
     case HeadEvent::Paused:
+      auditLog(audit::cat::Therapy, audit::ev::Pause, h->slotId(), h->addr(),
+               std::string("{") + audit::jnum("remainingS", h->remaining()) + "}");
       emit toast(h->slotId() + QStringLiteral(" 已暂停 · 计时暂停"),
                  QStringLiteral("warn"), 1400);
       break;
     case HeadEvent::Resumed:
+      auditLog(audit::cat::Therapy, audit::ev::Resume, h->slotId(), h->addr(),
+               std::string("{") + audit::jnum("remainingS", h->remaining()) + "}");
       emit toast(h->slotId() + QStringLiteral(" 已继续"),
                  QStringLiteral("ok"), 1400);
       break;
     case HeadEvent::StopRequested:
+      auditLog(audit::cat::Therapy, audit::ev::Stop, h->slotId(), h->addr(),
+               std::string("{") + audit::jstr("reason", "user") + "," +
+                   audit::jnum("totalS", head.totalSeconds()) + "}");
       emit toast(h->slotId() + QStringLiteral(" 已完全停止 · 计时已归零"),
                  QStringLiteral("warn"), 2000);
       break;
     case HeadEvent::TimerExpired:
       break;  // Completed 紧随其后，避免双 toast
     case HeadEvent::Completed:
+      auditLog(audit::cat::Therapy, audit::ev::Complete, h->slotId(), h->addr(),
+               std::string("{") + audit::jnum("runS", head.totalSeconds()) + "," +
+                   audit::jnum("freq", head.config().freqHz) + "," +
+                   audit::jnum("mode", static_cast<int>(head.config().mode)) + "}");
       emit toast(h->slotId() + QStringLiteral(" 治疗完成 ✔"),
                  QStringLiteral("ok"), 2600);
       break;
     case HeadEvent::FaultEntered:
+      auditLog(audit::cat::Fault, audit::ev::FaultDetected, h->slotId(), h->addr(),
+               std::string("{") + audit::jnum("faultBits", head.faultBits()) + "," +
+                   audit::jstr("faultText", h->faultText().toStdString()) + "," +
+                   audit::jnum("tempC", head.tempC()) + "}");
       emit toast(h->slotId() + QStringLiteral(" 故障：") + h->faultText(),
                  QStringLiteral("err"), 4000);
       break;
     case HeadEvent::FaultCleared:
+      auditLog(audit::cat::Fault, audit::ev::FaultReset, h->slotId(), h->addr(),
+               std::string("{") + audit::jstr("result", "ok") + "}");
       emit toast(h->slotId() + QStringLiteral(" 故障已复位"),
                  QStringLiteral("ok"), 2000);
       break;
     case HeadEvent::WentOfflineDuringRun:
+      auditLog(audit::cat::Fault, audit::ev::HeadOffline, h->slotId(), h->addr(),
+               std::string("{") +
+                   audit::jstr("note", "运行中总线失联，电机可能仍在转（D5）") + "}");
       emit toast(h->slotId() +
                      QStringLiteral(" 连接丢失！电机可能仍在运转，必要时使用硬件急停"),
                  QStringLiteral("err"), 6000);
       break;
     case HeadEvent::AckRejected:
+      auditLog(audit::cat::Fault, audit::ev::AckRejected, h->slotId(), h->addr(),
+               std::string("{") + audit::jstr("note", "板载拒绝指令（0xEE/0xBB）") + "}");
       emit toast(h->slotId() + QStringLiteral(" 指令被设备拒绝"),
                  QStringLiteral("warn"), 2000);
       break;
@@ -283,7 +360,7 @@ QString AppCore::modeDesc() const {
 }
 
 QString AppCore::versionText() const {
-  return QStringLiteral("v0.2.0-m3 · ") +
+  return QStringLiteral("v" APP_VERSION "-m4a · ") +
          (realBus_ ? QStringLiteral("串口 ") + cfg_->serialPort
                    : QStringLiteral("模拟总线"));
 }
@@ -310,11 +387,13 @@ void AppCore::selectHead(const QString& slotId) {
 
 void AppCore::adjustFreq(int deltaSteps) {
   if (!selected_) return;
-  HeadConfig c = selected_->coreHead().config();
+  const HeadConfig before = selected_->coreHead().config();
+  HeadConfig c = before;
   const int v = qBound(kMinFreqHz, c.freqHz + deltaSteps * 5, kMaxFreqHz);
   if (v == c.freqHz) return;
   c.freqHz = v;
   if (!selected_->applyCore(c)) return;
+  noteParamChange(selected_, before);  // M4a（D15）：运行中改参 2s 防抖入审计
   const auto s = selected_->coreHead().state();
   if (s == HeadState::Running || s == HeadState::Starting || s == HeadState::Paused)
     emit toast(selected_->slotId() + QStringLiteral(" 频率实时调整为 ") +
@@ -324,20 +403,24 @@ void AppCore::adjustFreq(int deltaSteps) {
 
 void AppCore::adjustTime(int deltaSteps) {
   if (!selected_) return;
-  HeadConfig c = selected_->coreHead().config();
+  const HeadConfig before = selected_->coreHead().config();
+  HeadConfig c = before;
   const int v = qBound(5, c.timeMin + deltaSteps * 5, 60);
   if (v == c.timeMin) return;
   c.timeMin = v;
-  selected_->applyCore(c);  // 核心层实现差值语义
+  if (!selected_->applyCore(c)) return;  // 核心层实现差值语义
+  noteParamChange(selected_, before);
 }
 
 void AppCore::setMode(int mode) {
   if (!selected_ || mode < 0 || mode > 2) return;
-  HeadConfig c = selected_->coreHead().config();
+  const HeadConfig before = selected_->coreHead().config();
+  HeadConfig c = before;
   const auto m = static_cast<Mode>(mode);
   if (c.mode == m) return;
   c.mode = m;
   if (!selected_->applyCore(c)) return;
+  noteParamChange(selected_, before);
   emit selectionChanged();  // modeDesc 更新
   const auto s = selected_->coreHead().state();
   if (s == HeadState::Running || s == HeadState::Starting || s == HeadState::Paused)
@@ -371,9 +454,15 @@ void AppCore::applyPreset(int index) {
   }
   if (savePend_ == index) {  // 第二次点击：存入预设
     const HeadConfig c = selected_->coreHead().config();
+    const QString oldText = presetText(index);
     cfg_->presets[index] = PresetConfig{c.freqHz, static_cast<int>(c.mode),
                                         c.timeMin};
     cfg_->save();
+    auditLog(audit::cat::Config, audit::ev::SettingChanged, QString(), 0,
+             std::string("{") +
+                 audit::jstr("key", "preset_" + std::to_string(index + 1)) + "," +
+                 audit::jstr("old", oldText.toStdString()) + "," +
+                 audit::jstr("new", presetText(index).toStdString()) + "}");
     savePend_ = -1;
     emit presetsChanged();
     emit toast(QStringLiteral("已存为 预设%1：%2")
@@ -384,7 +473,8 @@ void AppCore::applyPreset(int index) {
   }
   // 第一次点击：应用预设
   const PresetConfig& p = cfg_->presets[index];
-  HeadConfig c = selected_->coreHead().config();
+  const HeadConfig before = selected_->coreHead().config();
+  HeadConfig c = before;
   c.freqHz = p.freqHz;
   c.mode = static_cast<Mode>(p.mode);
   c.timeMin = p.timeMin;
@@ -392,6 +482,7 @@ void AppCore::applyPreset(int index) {
     emit toast(QStringLiteral("预设参数无效"), QStringLiteral("err"), 2000);
     return;
   }
+  noteParamChange(selected_, before);
   savePend_ = index;
   savePendTimer_.start();
   emit presetsChanged();
@@ -516,8 +607,41 @@ QString hashPin(const QString& salt, const QString& pin) {
 
 bool AppCore::pinSet() const { return !cfg_->pinHash.isEmpty(); }
 
-bool AppCore::verifyPin(const QString& pin) {
-  return pinSet() && hashPin(cfg_->pinSalt, pin) == cfg_->pinHash;
+bool AppCore::verifyPin(const QString& pin, const QString& source) {
+  // M4a（D20）：锁定期间拒绝且不累计；成功清零计数；第 5 次失败触发锁定
+  // 注意用 std::int64_t 而非 qint64：Linux LP64 下两者是不同类型（long vs long long）
+  std::int64_t remainMs = 0;
+  if (pinGuard_.locked(&remainMs)) {
+    auditLog(audit::cat::Access, audit::ev::PinFail, QString(), 0,
+             std::string("{") + audit::jstr("source", source.toStdString()) + "," +
+                 audit::jbool("locked", true) + "," + audit::jnum("remainMs", remainMs) +
+                 "}");
+    emit toast(QStringLiteral("PIN 连续失败次数过多，已锁定（剩余 %1 秒）")
+                   .arg(remainMs / 1000 + 1),
+               QStringLiteral("err"), 3000);
+    return false;
+  }
+  const bool ok = pinSet() && hashPin(cfg_->pinSalt, pin) == cfg_->pinHash;
+  if (ok) {
+    pinGuard_.onSuccess();
+    auditLog(audit::cat::Access, audit::ev::PinSuccess, QString(), 0,
+             std::string("{") + audit::jstr("source", source.toStdString()) + "}");
+    return true;
+  }
+  const bool justLocked = pinGuard_.onFailure();
+  auditLog(audit::cat::Access, audit::ev::PinFail, QString(), 0,
+           std::string("{") + audit::jstr("source", source.toStdString()) + "," +
+               audit::jnum("failCount", pinGuard_.failCount()) + "," +
+               audit::jbool("justLocked", justLocked) + "}");
+  if (justLocked) {
+    auditLog(audit::cat::Access, audit::ev::PinLocked, QString(), 0,
+             std::string("{") + audit::jnum("lockSeconds", 300) + "," +
+                 audit::jstr("note", "连续 5 次失败（D20 防暴破）") + "}");
+    emit pinLockChanged();
+    emit toast(QStringLiteral("PIN 连续失败 5 次，已锁定 5 分钟（已记入审计）"),
+               QStringLiteral("err"), 4000);
+  }
+  return false;
 }
 
 bool AppCore::setInitialPin(const QString& pin) {
@@ -526,6 +650,10 @@ bool AppCore::setInitialPin(const QString& pin) {
       QString::number(QRandomGenerator::system()->generate64(), 16);
   cfg_->pinHash = hashPin(cfg_->pinSalt, pin);
   cfg_->save();
+  auditLog(audit::cat::Access, audit::ev::PinInitialSet, QString(), 0,
+           std::string("{") +
+               audit::jstr("fp8", cfg_->pinHash.left(8).toStdString()) + "," +
+               audit::jnum("length", pin.length()) + "}");  // 指纹前缀，不记明文
   emit pinChanged();
   emit toast(QStringLiteral("PIN 已设置（设置/维护入口已启用门禁）"),
              QStringLiteral("ok"), 2500);
@@ -533,12 +661,16 @@ bool AppCore::setInitialPin(const QString& pin) {
 }
 
 bool AppCore::changePin(const QString& oldPin, const QString& newPin) {
-  if (!verifyPin(oldPin)) return false;
+  if (!verifyPin(oldPin, QStringLiteral("changePin"))) return false;
   if (newPin.length() < 4 || newPin.length() > 6) return false;
   cfg_->pinSalt =
       QString::number(QRandomGenerator::system()->generate64(), 16);
   cfg_->pinHash = hashPin(cfg_->pinSalt, newPin);
   cfg_->save();
+  auditLog(audit::cat::Access, audit::ev::PinChanged, QString(), 0,
+           std::string("{") +
+               audit::jstr("fp8", cfg_->pinHash.left(8).toStdString()) + "," +
+               audit::jnum("length", newPin.length()) + "}");
   emit pinChanged();
   emit toast(QStringLiteral("PIN 已修改"), QStringLiteral("ok"), 2000);
   return true;
@@ -547,17 +679,37 @@ bool AppCore::changePin(const QString& oldPin, const QString& newPin) {
 // ================= M3.5：设置持久化 =================
 
 void AppCore::saveIdentity(const QString& hospital, const QString& department) {
+  const QString oldHosp = cfg_->hospital, oldDept = cfg_->department;
   cfg_->hospital = hospital.trimmed();
   cfg_->department = department.trimmed();
   cfg_->save();
+  if (cfg_->hospital != oldHosp)
+    auditLog(audit::cat::Config, audit::ev::SettingChanged, QString(), 0,
+             std::string("{") + audit::jstr("key", "hospital") + "," +
+                 audit::jstr("old", oldHosp.toStdString()) + "," +
+                 audit::jstr("new", cfg_->hospital.toStdString()) + "}");
+  if (cfg_->department != oldDept)
+    auditLog(audit::cat::Config, audit::ev::SettingChanged, QString(), 0,
+             std::string("{") + audit::jstr("key", "department") + "," +
+                 audit::jstr("old", oldDept.toStdString()) + "," +
+                 audit::jstr("new", cfg_->department.toStdString()) + "}");
   emit hospChanged();
   emit toast(QStringLiteral("医院 / 科室信息已保存"), QStringLiteral("ok"), 2000);
 }
 
 void AppCore::saveSerial(const QString& port, int baud) {
+  const QString oldPort = cfg_->serialPort;
+  const int oldBaud = cfg_->baudRate;
   cfg_->serialPort = port.trimmed();
   if (baud > 0) cfg_->baudRate = baud;
   cfg_->save();
+  if (cfg_->serialPort != oldPort || cfg_->baudRate != oldBaud)
+    auditLog(audit::cat::Config, audit::ev::SettingChanged, QString(), 0,
+             std::string("{") + audit::jstr("key", "serial") + ",\"old\":{" +
+                 audit::jstr("port", oldPort.toStdString()) + "," +
+                 audit::jnum("baud", oldBaud) + "},\"new\":{" +
+                 audit::jstr("port", cfg_->serialPort.toStdString()) + "," +
+                 audit::jnum("baud", cfg_->baudRate) + "}}");
   emit toast(QStringLiteral("串口配置已保存，重启应用后生效"),
              QStringLiteral("warn"), 3000);
 }
@@ -578,17 +730,22 @@ void AppCore::setSystemTime(const QString& isoDateTime) {
   }
 #ifdef Q_OS_LINUX
   // 目标板：timedatectl（polkit 授权运行用户）；审计时间戳另用单调时钟防污染
+  const qint64 oldWall = QDateTime::currentMSecsSinceEpoch();
   QProcess p;
   p.start(QStringLiteral("timedatectl"),
           {QStringLiteral("set-time"),
            t.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))});
   p.waitForFinished(3000);
-  if (p.exitCode() == 0)
+  if (p.exitCode() == 0) {
+    // M4a（D17）：改钟入审计并重锚定（内部记 CLOCK_CHANGE，防 CLOCK_JUMP 双记）
+    if (audit_)
+      audit_->noteClockChange(oldWall, QDateTime::currentMSecsSinceEpoch(), "manual");
     emit toast(QStringLiteral("系统时间已设置"), QStringLiteral("ok"), 2000);
-  else
+  } else {
     emit toast(QStringLiteral("设置系统时间失败（需要授权）：") +
                    QString::fromUtf8(p.readAllStandardError()),
                QStringLiteral("err"), 4000);
+  }
 #else
   Q_UNUSED(t)
   emit toast(QStringLiteral("开发平台不修改系统时间；目标板（Linux）可用"),
@@ -614,8 +771,15 @@ QVariantList AppCore::bindingInfos() const {
 
 void AppCore::maintSetType(int slotIndex, const QString& type) {
   if (slotIndex < 0 || slotIndex >= cfg_->slotList.size()) return;
+  const QString oldType = cfg_->slotList[slotIndex].type;
   cfg_->slotList[slotIndex].type = type;
   cfg_->save();
+  if (oldType != type)
+    auditLog(audit::cat::Config, audit::ev::BindingChanged,
+             cfg_->slotList[slotIndex].slotId, cfg_->slotList[slotIndex].addr,
+             std::string("{") + audit::jstr("field", "type") + "," +
+                 audit::jstr("old", oldType.toStdString()) + "," +
+                 audit::jstr("new", type.toStdString()) + "}");
   if (HeadItem* h = heads_.value(slotIndex, nullptr)) h->setHeadType(type);
   emit bindingsChanged();
   emit sysStateChanged();  // header 类型汇总刷新
@@ -628,8 +792,14 @@ bool AppCore::maintSetAddr(int slotIndex, int newAddr) {
   if (newAddr < 1 || newAddr > 255) return false;
   for (int i = 0; i < cfg_->slotList.size(); ++i)
     if (i != slotIndex && cfg_->slotList[i].addr == newAddr) return false;
+  const int oldAddr = cfg_->slotList[slotIndex].addr;
   cfg_->slotList[slotIndex].addr = static_cast<quint8>(newAddr);
   cfg_->save();
+  auditLog(audit::cat::Config, audit::ev::BindingChanged,
+           cfg_->slotList[slotIndex].slotId, newAddr,
+           std::string("{") + audit::jstr("field", "addr") + "," +
+               audit::jnum("old", oldAddr) + "," + audit::jnum("new", newAddr) + "," +
+               audit::jstr("note", "配置已改，重启生效；设备侧需烧录同步") + "}");
   emit bindingsChanged();
   emit toast(QStringLiteral("槽位地址配置已改，重启应用后生效（设备侧地址需用烧录流程同步）"),
              QStringLiteral("warn"), 3500);
@@ -641,6 +811,8 @@ void AppCore::maintProbeZero() {
   sched_->enqueueControl(
       encodeRead(Cmd::ReadInfo, 0).value(),
       [this](bool ok, Reply, const ReplyPayload&) {
+        auditLog(audit::cat::Config, audit::ev::ProbeZero, QString(), 0,
+                 std::string("{") + audit::jbool("found", ok) + "}");
         emit maintZeroFound(ok);
       });
 }
@@ -654,6 +826,10 @@ void AppCore::maintBurn(int slotIndex) {
   for (const HeadItem* h : heads_) {
     if (h->slotId() == target.slotId) continue;
     if (sched_->deviceOnline(static_cast<std::uint8_t>(h->addr()))) {
+      auditLog(audit::cat::Config, audit::ev::BurnResult, target.slotId, target.addr,
+               std::string("{") + audit::jbool("ok", false) + "," +
+                   audit::jstr("stage", "interlock") + "," +
+                   audit::jstr("msg", "联锁拒绝：其他治疗头在线") + "}");
       emit maintBurnResult(
           false, QStringLiteral("联锁拒绝：其他治疗头仍在线。0xAA 会把在线头一起改写，"
                                 "请仅保留新头（拔除其余治疗头）后重试。"));
@@ -665,12 +841,21 @@ void AppCore::maintBurn(int slotIndex) {
       encodeRead(Cmd::ReadInfo, 0).value(),
       [this, target](bool zeroOk, Reply, const ReplyPayload&) {
         if (!zeroOk) {
+          auditLog(audit::cat::Config, audit::ev::BurnResult, target.slotId, target.addr,
+                   std::string("{") + audit::jbool("ok", false) + "," +
+                       audit::jstr("stage", "probe0") + "," +
+                       audit::jstr("msg", "未检测到地址 0 设备") + "}");
           emit maintZeroFound(false);
           emit maintBurnResult(
               false, QStringLiteral("未检测到地址 0 的设备：请确认新头已接入且为出厂状态。"));
           return;
         }
         emit maintZeroFound(true);
+        auditLog(audit::cat::Config, audit::ev::BurnStarted, target.slotId, target.addr,
+                 std::string("{") + audit::jstr("interlock", "passed") + "," +
+                     audit::jnum("closedLoop", defaults::kClosedLoop ? 1 : 0) + "," +
+                     audit::jnum("stallTime", defaults::kStallTime) + "," +
+                     audit::jnum("polePairs", defaults::kPolePairs) + "}");
         const Frame burn = encodeConfigAddress(
             target.addr, defaults::kClosedLoop, defaults::kStallTime,
             defaults::kPolePairs);
@@ -678,6 +863,11 @@ void AppCore::maintBurn(int slotIndex) {
             burn, [this, target](bool ok, Reply, const ReplyPayload& p) {
               const bool ackOk =
                   ok && std::get<AckReply>(p).flag == AckFlag::Ok;
+              auditLog(audit::cat::Config, audit::ev::BurnResult, target.slotId,
+                       target.addr,
+                       std::string("{") + audit::jbool("ok", ackOk) + "," +
+                           audit::jstr("stage", "burn") + "," +
+                           audit::jnum("newAddr", target.addr) + "}");
               if (ackOk) {
                 emit toast(target.slotId +
                                QStringLiteral(" 烧录地址 %1 成功，已可绑定使用")
@@ -706,6 +896,124 @@ void AppCore::headAction(const QString& slotId, const QString& action) {
   else
     return;
   if (f) sendHeadFrame(h, *f);
+}
+
+// ================= M4a：审计追踪（决策 D13–D22） =================
+
+void AppCore::auditLog(const char* category, const char* type, const QString& slot,
+                       int addr, const std::string& payload, qlonglong operatorId) {
+  if (!audit_) return;
+  const std::string slotS = slot.toStdString();  // 生命周期须覆盖 log 调用
+  audit_->log(category, type, slotS, addr, operatorId, payload);
+}
+
+bool AppCore::auditOk() const {
+  return !audit_ || (!audit_->degraded() && !audit_->unavailable());
+}
+
+void AppCore::noteParamChange(HeadItem* h, const HeadConfig& before) {
+  if (!audit_ || !h) return;
+  const auto s = h->coreHead().state();
+  // idle 改参不记（会进下一次 THERAPY_START 的参数快照，D15）
+  if (s != HeadState::Starting && s != HeadState::Running && s != HeadState::Paused)
+    return;
+  if (!pendingSlot_.isEmpty() && pendingSlot_ != h->slotId() &&
+      paramDebounceTimer_.isActive())
+    flushParamChange();  // 换头：先结算上一头的防抖窗口
+  if (pendingSlot_.isEmpty()) pendingBefore_ = before;  // 窗口起点参数
+  pendingSlot_ = h->slotId();
+  paramDebounceTimer_.start();
+}
+
+void AppCore::flushParamChange() {
+  paramDebounceTimer_.stop();
+  if (pendingSlot_.isEmpty()) return;
+  const QString slot = pendingSlot_;
+  pendingSlot_.clear();
+  HeadItem* h = findBySlot(slot);
+  if (!h || !audit_) return;
+  const auto s = h->coreHead().state();
+  if (s != HeadState::Starting && s != HeadState::Running && s != HeadState::Paused)
+    return;  // 窗口内已停止：改动进下一次 START 快照
+  const HeadConfig after = h->coreHead().config();
+  if (after.freqHz == pendingBefore_.freqHz && after.mode == pendingBefore_.mode &&
+      after.timeMin == pendingBefore_.timeMin)
+    return;  // 防抖窗口内改回了原值：无净变化
+  auto cfgJson = [](const HeadConfig& c) {
+    return std::string("{") + audit::jnum("freq", c.freqHz) + "," +
+           audit::jnum("mode", static_cast<int>(c.mode)) + "," +
+           audit::jnum("timeMin", c.timeMin) + "}";
+  };
+  auditLog(audit::cat::Therapy, audit::ev::ParamChange, slot, h->addr(),
+           std::string("{\"before\":") + cfgJson(pendingBefore_) + ",\"after\":" +
+               cfgJson(after) + "," + audit::jstr("note", "2s 防抖生效值（D15）") + "}");
+}
+
+void AppCore::snapshotNow() {
+  if (!audit_ || !anyOutput()) return;  // 快照仅在治疗会话期间（D15）
+  std::string arr = "[";
+  bool first = true;
+  for (const HeadItem* h : heads_) {
+    if (!first) arr += ",";
+    first = false;
+    arr += std::string("{") + audit::jstr("slot", h->slotId().toStdString()) + "," +
+           audit::jnum("addr", h->addr()) + "," +
+           audit::jnum("state", static_cast<int>(h->coreHead().state())) + "," +
+           audit::jnum("targetRpm", h->coreHead().currentTargetRpm()) + "," +
+           audit::jnum("actualRpm", h->coreHead().reportedRpm()) + "," +
+           audit::jnum("tempC", h->coreHead().tempC()) + "}";
+  }
+  arr += "]";
+  audit_->logSnapshot(arr);
+}
+
+QString AppCore::currentOperatorName() const {
+  if (!audit_ || currentOpId_ <= 0) return QString();
+  for (const auto& o : audit_->listOperators(true))
+    if (o.id == currentOpId_) return QString::fromStdString(o.name);
+  return QString();
+}
+
+QVariantList AppCore::operatorList() const {
+  QVariantList l;
+  if (!audit_) return l;
+  for (const auto& o : audit_->listOperators(true)) {
+    QVariantMap m;
+    m[QStringLiteral("id")] = static_cast<qlonglong>(o.id);
+    m[QStringLiteral("name")] = QString::fromStdString(o.name);
+    m[QStringLiteral("code")] = QString::fromStdString(o.code);
+    m[QStringLiteral("current")] = (o.id == currentOpId_);
+    l.append(m);
+  }
+  return l;
+}
+
+qlonglong AppCore::addOperator(const QString& name, const QString& code) {
+  if (!audit_) return 0;
+  const qlonglong id =
+      audit_->addOperator(name.trimmed().toStdString(), code.trimmed().toStdString());
+  if (id > 0) emit operatorsChanged();
+  return id;
+}
+
+void AppCore::removeOperator(qlonglong id) {
+  if (!audit_) return;
+  if (audit_->setOperatorActive(id, false)) {
+    if (currentOpId_ == id) {
+      currentOpId_ = 0;
+      cfg_->currentOperatorId = 0;
+      cfg_->save();
+      emit currentOperatorChanged();
+    }
+    emit operatorsChanged();
+  }
+}
+
+void AppCore::setCurrentOperator(qlonglong id) {
+  currentOpId_ = id;
+  cfg_->currentOperatorId = id;
+  cfg_->save();
+  emit currentOperatorChanged();
 }
 
 }  // namespace massage::app

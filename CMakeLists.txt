@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(massage_controller VERSION 0.2.0 LANGUAGES CXX)
+project(massage_controller VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,6 +35,9 @@ endif()
 
 # 协议核心层：纯 C++17，零 Qt 依赖（设计文档 §4）
 add_subdirectory(src/core)
+
+# 审计追踪引擎：纯 C++17，零 Qt 依赖（M4a，决策 D29，sqlite3 嵌入）
+add_subdirectory(src/audit)
 
 add_subdirectory(tests)
 

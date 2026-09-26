@@ -18,7 +18,18 @@
       "PowerShell(foreach \\($t in 'test_profile','test_head_state','test_bus_scheduler'\\) { Write-Output \"== $t ==\"; & \"M:\\\\build\\\\tests\\\\Debug\\\\$t.exe\" | Select-Object -Last 1 }; python \"E:\\\\个人开发\\\\台式按摩仪\\\\tests\\\\test_sim_consistency.py\" | Select-Object -Last 1)",
       "Bash(git rm *)",
       "Bash(rm -f bld.txt cfg.txt)",
-      "Bash(printf '\\\\n# 构建日志\\\\n*.log\\\\ncfg.txt\\\\nbld.txt\\\\n')"
+      "Bash(printf '\\\\n# 构建日志\\\\n*.log\\\\ncfg.txt\\\\nbld.txt\\\\n')",
+      "PowerShell(wsl -l -v)",
+      "PowerShell(wsl --status; wsl --version)",
+      "PowerShell(wsl --install -d Ubuntu-20.04 --no-launch)",
+      "PowerShell(\\(Invoke-WebRequest -Uri \"https://cloud-images.ubuntu.com/wsl/releases/20.04/current/\" -UseBasicParsing\\).Links | Select-Object -ExpandProperty href)",
+      "PowerShell(foreach \\($u in @\\(\"https://cloud-images.ubuntu.com/wsl/releases/focal/current/\",\"https://cloud-images.ubuntu.com/wsl/focal/current/\"\\)\\) { try { Write-Output \"== $u\"; \\(Invoke-WebRequest -Uri $u -UseBasicParsing\\).Links | Select-Object -ExpandProperty href } catch { Write-Output \"FAIL: $\\($_.Exception.Message\\)\" } })",
+      "PowerShell(\\(Invoke-WebRequest -Uri \"https://cloud-images.ubuntu.com/wsl/\" -UseBasicParsing\\).Links | Select-Object -ExpandProperty href)",
+      "PowerShell(foreach \\($u in @\\(\"https://cloud-images.ubuntu.com/wsl/releases/\",\"https://cdimages.ubuntu.com/ubuntu-wsl/\"\\)\\) { try { Write-Output \"== $u\"; \\(Invoke-WebRequest -Uri $u -UseBasicParsing\\).Links | Select-Object -ExpandProperty href } catch { Write-Output \"FAIL: $\\($_.Exception.Message\\)\" } })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"https://aka.ms/wslubuntu2004\" -Method Head -MaximumRedirection 0 -UseBasicParsing -ErrorAction Stop; Write-Output \"Status: $\\($r.StatusCode\\)\"; Write-Output $r.Headers } catch { $resp = $_.Exception.Response; if \\($resp\\) { Write-Output \"Status: $\\([int]$resp.StatusCode\\)\"; Write-Output \"Location: $\\($resp.Headers['Location']\\)\" } else { Write-Output \"ERR: $\\($_.Exception.Message\\)\" } })",
+      "PowerShell(curl.exe -sIL -o NUL -w \"final_url=%{url_effective} code=%{http_code} size=%{size_download}`n\" --max-time 30 \"https://aka.ms/wslubuntu2004\")",
+      "PowerShell(foreach \\($u in @\\(\"https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/wsl/releases/focal/current/\",\"https://mirrors.ustc.edu.cn/ubuntu-cloud-images/wsl/releases/focal/current/\",\"https://mirrors.aliyun.com/ubuntu-cloud-images/wsl/releases/focal/current/\"\\)\\) { try { Write-Output \"== $u\"; \\(Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 20\\).Links | Select-Object -ExpandProperty href | Select-Object -First 20 } catch { Write-Output \"FAIL: $\\($_.Exception.Message\\)\" } })",
+      "PowerShell(Get-Item *)"
     ]
   }
 }

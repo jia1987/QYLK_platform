@@ -54,6 +54,10 @@ AppConfig AppConfig::loadOrCreate() {
   c.department = root.value(QStringLiteral("department")).toString();
   c.pinSalt = root.value(QStringLiteral("pinSalt")).toString();
   c.pinHash = root.value(QStringLiteral("pinHash")).toString();
+  c.auditDbPath = root.value(QStringLiteral("auditDbPath")).toString();
+  c.auditQuotaMb = root.value(QStringLiteral("auditQuotaMb")).toInt(c.auditQuotaMb);
+  c.currentOperatorId = static_cast<qint64>(
+      root.value(QStringLiteral("currentOperatorId")).toDouble(0));
 
   const QJsonArray slotsArr = root.value(QStringLiteral("slots")).toArray();
   if (slotsArr.size() == c.slotList.size()) {
@@ -104,6 +108,9 @@ bool AppConfig::save() const {
   root[QStringLiteral("department")] = department;
   root[QStringLiteral("pinSalt")] = pinSalt;
   root[QStringLiteral("pinHash")] = pinHash;
+  root[QStringLiteral("auditDbPath")] = auditDbPath;
+  root[QStringLiteral("auditQuotaMb")] = auditQuotaMb;
+  root[QStringLiteral("currentOperatorId")] = static_cast<double>(currentOperatorId);
   root[QStringLiteral("slots")] = slotsArr;
   root[QStringLiteral("presets")] = presetsArr;
 

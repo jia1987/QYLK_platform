@@ -1,6 +1,9 @@
 # 跨平台开发（Windows 开发机 + WSL/RK板构建）：源码统一 LF
 * text=auto eol=lf
 
+# 第三方嵌入源码：禁止行尾转换，保持与上游字节一致（SOUP 可追溯，M4a/D29）
+third_party/** -text
+
 # 明确二进制，禁止任何换行转换
 *.png binary
 *.jpg binary

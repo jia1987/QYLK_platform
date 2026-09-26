@@ -10,6 +10,9 @@
 #include <QVariantList>
 
 #include "app_config.h"
+#include "audit/audit_clock.h"
+#include "audit/audit_log.h"
+#include "audit/pin_guard.h"
 #include "core/bus_scheduler.h"
 #include "head_item.h"
 #include "system_clock.h"
@@ -34,9 +37,13 @@ class AppCore : public QObject {
   Q_PROPERTY(QString modeDesc READ modeDesc NOTIFY selectionChanged)
   Q_PROPERTY(QString versionText READ versionText CONSTANT)
   Q_PROPERTY(bool pinSet READ pinSet NOTIFY pinChanged)
+  Q_PROPERTY(bool auditOk READ auditOk NOTIFY auditStateChanged)
+  Q_PROPERTY(bool pinLocked READ pinLocked NOTIFY pinLockChanged)
+  Q_PROPERTY(qlonglong currentOperatorId READ currentOperatorId NOTIFY currentOperatorChanged)
+  Q_PROPERTY(QString currentOperatorName READ currentOperatorName NOTIFY currentOperatorChanged)
  public:
   AppCore(AppConfig* cfg, core::ITransport& transport, bool realBus,
-          QObject* parent = nullptr);
+          audit::AuditLog* audit = nullptr, QObject* parent = nullptr);
 
   // 传输入口：MockBus/串口适配层把校验过的应答帧交给这里
   void deliverReply(const core::Frame& f);
@@ -72,11 +79,23 @@ class AppCore : public QObject {
   Q_INVOKABLE QString presetText(int index) const;
   Q_INVOKABLE void showAbout();
 
-  // ---- M3.5 设置面板 / PIN 门禁（决策 D9）----
+  // ---- M3.5 设置面板 / PIN 门禁（决策 D9）+ M4a 防暴破（D20）----
   bool pinSet() const;
-  Q_INVOKABLE bool verifyPin(const QString& pin);
+  bool pinLocked() const { return pinGuard_.locked(); }
+  Q_INVOKABLE bool verifyPin(const QString& pin,
+                             const QString& source = QStringLiteral("settings"));
   Q_INVOKABLE bool setInitialPin(const QString& pin);       // 首启强制设置
   Q_INVOKABLE bool changePin(const QString& oldPin, const QString& newPin);
+
+  // ---- M4a 审计（决策 D13–D22）----
+  bool auditOk() const;
+  qlonglong currentOperatorId() const { return currentOpId_; }
+  QString currentOperatorName() const;
+  Q_INVOKABLE QVariantList operatorList() const;            // 活跃操作员（D14）
+  Q_INVOKABLE qlonglong addOperator(const QString& name, const QString& code);
+  Q_INVOKABLE void removeOperator(qlonglong id);            // 软删（审计留痕）
+  Q_INVOKABLE void setCurrentOperator(qlonglong id);        // 治疗前选人，记住上次
+  Q_INVOKABLE void snapshotNow();                           // 立即写会话快照（30s 定时/测试用）
   Q_INVOKABLE void saveIdentity(const QString& hospital, const QString& department);
   Q_INVOKABLE void saveSerial(const QString& port, int baud);  // 重启生效
   Q_INVOKABLE void setSystemTime(const QString& isoDateTime);  // 仅 Linux（timedatectl）
@@ -105,6 +124,10 @@ class AppCore : public QObject {
   void bindingsChanged();
   void maintZeroFound(bool found);
   void maintBurnResult(bool ok, const QString& msg);
+  void auditStateChanged();       // M4a：审计可用/降级切换（D13 醒目告警）
+  void pinLockChanged();          // M4a：PIN 锁定状态（D20）
+  void currentOperatorChanged();  // M4a：当前操作员（D14）
+  void operatorsChanged();
 
  private:
   HeadItem* findBySlot(const QString& slotId) const;
@@ -117,6 +140,11 @@ class AppCore : public QObject {
   void runConfirmed(const QVariantMap& info, std::function<void()> action);
   void startHeads(const QStringList& slotIds);
   void stopHeads(const QStringList& slotIds);
+  // M4a 审计辅助
+  void auditLog(const char* category, const char* type, const QString& slot, int addr,
+                const std::string& payload, qlonglong operatorId = 0);
+  void noteParamChange(HeadItem* h, const core::HeadConfig& before);  // 2s 防抖（D15）
+  void flushParamChange();
 
   AppConfig* cfg_;
   SystemClock clock_;
@@ -131,6 +159,15 @@ class AppCore : public QObject {
   std::function<void()> pendingConfirm_;
   QString clockText_;
   bool realBus_;
+  // ---- M4a 审计（D13–D22）----
+  audit::AuditLog* audit_;               // 可空（旧测试/无审计场景）
+  audit::SystemClock auditClock_;        // 单调+墙钟（D17）
+  audit::PinGuard pinGuard_;             // 5 次失败锁 5 分钟（D20）
+  QTimer snapTimer_;                     // 30s 会话快照（D15）
+  QTimer paramDebounceTimer_;            // 改参 2s 防抖（D15）
+  QString pendingSlot_;                  // 防抖中的槽位
+  core::HeadConfig pendingBefore_;       // 防抖起点参数
+  qlonglong currentOpId_ = 0;            // 当前操作员（D14）
 };
 
 }  // namespace massage::app

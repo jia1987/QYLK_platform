@@ -71,6 +71,19 @@ void MockBus::setPresent(std::uint8_t addr, bool present) {
   }
 }
 
+void MockBus::setFault(std::uint8_t addr, std::uint8_t faultBits) {
+  auto it = heads_.find(addr);
+  if (it != heads_.end()) {
+    it->second.fault |= faultBits;
+    it->second.targetRpm = 0;  // 板载自保护：故障即停（与 Python 模拟器一致）
+  }
+}
+
+void MockBus::clearFault(std::uint8_t addr) {
+  auto it = heads_.find(addr);
+  if (it != heads_.end()) it->second.fault = 0;
+}
+
 bool MockBus::send(const Frame& f) {
   if (!masterFrameOk(f)) return true;  // 坏帧：静默丢弃（协议规定无应答）
   handle(f);

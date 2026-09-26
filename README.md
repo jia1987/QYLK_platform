@@ -80,8 +80,20 @@ Ubuntu（目标板/WSL）：`sudo apt install libqt5serialport5-dev`（Qt 5.12 �
     仅当「地址0新头在线」且「其余绑定头全离线」才允许 0xAA（协议警告：AA 会被总线所有头接收）；
     MockBus 复现「谁收到谁改」真实语义，联锁有集成测试 `maint_burn` 双场景覆盖
   - `MASSAGE_MOCK_PRESENT=0` 环境变量可模拟「只接新头」的换头场景供演练
-- [ ] **M3.6 WSL 终验**（待重启后）：Ubuntu 20.04 + Qt 5.12 构建验证、socat 虚拟串口 ↔ Python 模拟器闭环联调
-- [ ] **M4 合规与审计**：SQLite 审计追踪、IEC 62304 文档链、WSL Qt5.12 终验
+- [x] **M3.6 WSL 终验**（2026-09-26）：WSL2 Ubuntu 20.04.3 + **Qt 5.12.8（与目标板同版）** Release 构建零错误，
+  ctest 5/5 全绿（含 `maint_burn` 烧录联锁集成测试）；socat 虚拟串口对 + `rs485_sim.py` ⇄ `massage_app --serial` 闭环联调：
+  启动停止帧覆盖地址 1–6、CRC/应答帧全部正确，GUI 经 WSLg 正常存活。环境：发行版位于 `C:\WSL\Ubuntu-20.04`，
+  源码副本 `~/massage`（自 `/mnt/e` 手动同步），apt 用清华源（focal 已 EOL，官方源失效）
+- [ ] **M4 合规与审计**（grill-me 五轮已完成 2026-09-26：决策 **D13–D32** 锁定于设计文档 §7，含冻结事件表与新待办 T9/T10）：
+  - [x] **M4a 审计引擎**（2026-09-26，Windows MinGW/Qt6.9 + WSL Qt5.12.8 双平台 ctest 10/10 全绿）：
+    纯 C++ sqlite3 嵌入（零 Qt 依赖，SQLite 3.53.4 入仓 third_party/）、WAL+FULL 断电零丢失（子进程 _Exit 硬杀实测）、
+    触发器+链式 SHA256 防篡改（DROP TRIGGER 后篡改仍被链校验抓获）、三列时间戳（wall+mono+boot_seq）、
+    会话哨兵（socat 实总线 SIGTERM 后二次启动补记 ABNORMAL_TERMINATION 实测）、fail-operational+NDJSON 兜底回填、
+    操作员名单、PIN 5 次锁 5 分钟、AppCore 全事件挂钩（治疗/故障/在位/配置/烧录/时钟/PIN）、30s 会话快照、改参 2s 防抖；
+    集成测试 `audit_flow`：完整治疗场次（启动→改参→故障→复位→重启→停止→PIN 锁定→操作员）审计 DB 逐条对账
+  - [ ] **M4b 审计 UI**：设置面板查询页（分页+筛选）、操作员管理界面、U盘导出 CSV+JSON+SHA256 清单（导出本身入审计）
+  - [ ] **M4c 文档链**：12 份中文 md（URD/SRS/SAD/SDD/RM/TRM/VR/SOUP/ISSUES/VC/PLAN/索引）+ SRS ID 嵌 ctest 测试名 + 矩阵脚本生成
+  - ~~WSL Qt5.12 终验~~（已随 M3.6 完成）
 
 ## 关键约束（详见设计文档）
 

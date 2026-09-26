@@ -27,6 +27,9 @@ class MockBus : public QObject, public core::ITransport {
 
   // 调试辅助：外部改变某头在位状态（后续绑定界面/维护模式用）
   void setPresent(std::uint8_t addr, bool present);
+  // 调试辅助：注入/清除板载故障（对齐 rs485_sim.py 的 fault/clear 命令，M4a 审计联调用）
+  void setFault(std::uint8_t addr, std::uint8_t faultBits);
+  void clearFault(std::uint8_t addr);
 
  private:
   struct MHead {
