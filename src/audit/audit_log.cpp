@@ -1052,4 +1052,29 @@ std::vector<SnapshotRow> AuditLog::querySnapshots(long long sessionId, int limit
   return out;
 }
 
+std::vector<SnapshotRow> AuditLog::querySnapshotsRange(long long sinceWall,
+                                                       long long untilWall, int limit) {
+  std::vector<SnapshotRow> out;
+  if (!db_) return out;
+  std::string sql =
+      "SELECT id,session_id,wall_utc,mono_ms,seq,data FROM snapshots WHERE 1=1";
+  if (sinceWall >= 0) sql += " AND wall_utc>=" + std::to_string(sinceWall);
+  if (untilWall >= 0) sql += " AND wall_utc<=" + std::to_string(untilWall);
+  sql += " ORDER BY id LIMIT " + std::to_string(limit) + ";";
+  sqlite3_stmt* st = nullptr;
+  if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &st, nullptr) != SQLITE_OK) return out;
+  while (sqlite3_step(st) == SQLITE_ROW) {
+    SnapshotRow r;
+    r.id = sqlite3_column_int64(st, 0);
+    r.sessionId = sqlite3_column_int64(st, 1);
+    r.wallUtc = sqlite3_column_int64(st, 2);
+    r.monoMs = sqlite3_column_int64(st, 3);
+    r.seq = sqlite3_column_int64(st, 4);
+    r.data = columnText(st, 5);
+    out.push_back(std::move(r));
+  }
+  sqlite3_finalize(st);
+  return out;
+}
+
 }  // namespace massage::audit

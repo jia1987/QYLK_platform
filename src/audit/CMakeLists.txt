@@ -21,6 +21,7 @@ target_link_libraries(sqlite3 PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
 
 add_library(massage_audit STATIC
   audit_log.cpp
+  audit_export.cpp
   sha256.cpp
   json_mini.cpp
 )

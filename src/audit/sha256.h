@@ -17,4 +17,7 @@ inline Sha256Digest sha256(std::string_view s) { return sha256(s.data(), s.size(
 std::string toHex(const Sha256Digest& d);           // 64 位小写十六进制
 inline std::string sha256Hex(std::string_view s) { return toHex(sha256(s)); }
 
+// 流式文件哈希（导出清单 D22 用，不把整个文件读进内存）；失败返回空串
+std::string sha256FileHex(const std::string& path);
+
 }  // namespace massage::audit

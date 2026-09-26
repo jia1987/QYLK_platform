@@ -130,4 +130,18 @@ std::string toHex(const Sha256Digest& d) {
   return s;
 }
 
+std::string sha256FileHex(const std::string& path) {
+  std::FILE* f = std::fopen(path.c_str(), "rb");
+  if (!f) return {};
+  Ctx c;
+  init(c);
+  std::uint8_t buf[65536];
+  std::size_t n = 0;
+  while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) update(c, buf, n);
+  const bool readErr = std::ferror(f) != 0;
+  std::fclose(f);
+  if (readErr) return {};
+  return toHex(finish(c));
+}
+
 }  // namespace massage::audit

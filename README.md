@@ -91,7 +91,12 @@ Ubuntu（目标板/WSL）：`sudo apt install libqt5serialport5-dev`（Qt 5.12 �
     会话哨兵（socat 实总线 SIGTERM 后二次启动补记 ABNORMAL_TERMINATION 实测）、fail-operational+NDJSON 兜底回填、
     操作员名单、PIN 5 次锁 5 分钟、AppCore 全事件挂钩（治疗/故障/在位/配置/烧录/时钟/PIN）、30s 会话快照、改参 2s 防抖；
     集成测试 `audit_flow`：完整治疗场次（启动→改参→故障→复位→重启→停止→PIN 锁定→操作员）审计 DB 逐条对账
-  - [ ] **M4b 审计 UI**：设置面板查询页（分页+筛选）、操作员管理界面、U盘导出 CSV+JSON+SHA256 清单（导出本身入审计）
+  - [x] **M4b 审计 UI + 导出**（2026-09-26，双平台 ctest 11/11 全绿 + Qt5.12 QML 运行时加载验证）：
+    设置面板三新区块——操作员管理（增/删/选为当前，启动确认弹窗显示归属人）、
+    审计记录页（类别筛选 chips + 分页列表 30/页 + 降级状态灯）、
+    导出（QStorageInfo 枚举可写卷/自定义目录、全量/近30天/近90天、CSV+BOM/JSON/SHA256 清单三件套、
+    导出时链校验结果写入清单、EXPORT 事件含逐文件哈希）；导出引擎 `audit_export.*` 纯 C++（RFC4180 转义、
+    中文 payload torture 测试、独立重算哈希比对、范围过滤、目标不可写防御）
   - [ ] **M4c 文档链**：12 份中文 md（URD/SRS/SAD/SDD/RM/TRM/VR/SOUP/ISSUES/VC/PLAN/索引）+ SRS ID 嵌 ctest 测试名 + 矩阵脚本生成
   - ~~WSL Qt5.12 终验~~（已随 M3.6 完成）
 

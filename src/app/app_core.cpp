@@ -2,12 +2,15 @@
 
 #include <QCryptographicHash>
 #include <QDateTime>
+#include <QFileInfo>
 #include <QMap>
 #include <QProcess>
 #include <QRandomGenerator>
+#include <QStorageInfo>
 #include <QStringList>
 #include <QVariantMap>
 
+#include "audit/audit_export.h"
 #include "audit/json_mini.h"
 #include "core/frame_codec.h"
 
@@ -513,12 +516,15 @@ void AppCore::requestStart(const QString& slotId) {
   info[QStringLiteral("icon")] = QStringLiteral("🩺");
   info[QStringLiteral("title")] =
       QStringLiteral("启动前请再次检查确认治疗头已就位！");
+  const QString opName = currentOperatorName();
   info[QStringLiteral("msg")] =
-      QStringLiteral("即将启动：%1\n参数：%2 Hz · %3 · %4 min\n计时将从 %4:00 全程重新开始")
+      QStringLiteral("即将启动：%1\n参数：%2 Hz · %3 · %4 min\n计时将从 %4:00 "
+                     "全程重新开始\n操作员：%5")
           .arg(h->slotId())
           .arg(c.freqHz)
           .arg(modeNameOf(c.mode))
-          .arg(c.timeMin);
+          .arg(c.timeMin)
+          .arg(opName.isEmpty() ? QStringLiteral("未指定（设置面板可选定）") : opName);
   info[QStringLiteral("okText")] = QStringLiteral("✓ 继续启动");
   info[QStringLiteral("cancelText")] = QStringLiteral("返回检查");
   info[QStringLiteral("danger")] = false;
@@ -1014,6 +1020,112 @@ void AppCore::setCurrentOperator(qlonglong id) {
   cfg_->currentOperatorId = id;
   cfg_->save();
   emit currentOperatorChanged();
+}
+
+// ================= M4b：审计查询与导出（D22/D23） =================
+
+QVariantList AppCore::auditPage(int offset, int limit, const QString& category) {
+  QVariantList l;
+  if (!audit_) return l;
+  audit::EventQuery q;
+  q.category = category.toStdString();
+  q.limit = limit > 0 ? limit : 30;
+  q.offset = offset > 0 ? offset : 0;
+  q.desc = true;  // 最新在前
+  const auto rows = audit_->queryEvents(q);
+  QMap<qlonglong, QString> opNames;
+  for (const auto& o : audit_->listOperators(false))
+    opNames[static_cast<qlonglong>(o.id)] = QString::fromStdString(o.name);
+  for (const auto& r : rows) {
+    QVariantMap m;
+    const QDateTime t = QDateTime::fromMSecsSinceEpoch(r.wallUtc);
+    QString payload = QString::fromStdString(r.payload);
+    if (payload.size() > 90) payload = payload.left(87) + QStringLiteral("…");
+    QString line = t.toString(QStringLiteral("MM-dd HH:mm:ss")) +
+                   QStringLiteral(" [") + QString::fromStdString(r.category) +
+                   QStringLiteral("] ") + QString::fromStdString(r.type);
+    if (!r.slot.empty()) line += QStringLiteral(" ") + QString::fromStdString(r.slot);
+    if (r.addr > 0) line += QStringLiteral(" addr") + QString::number(r.addr);
+    if (r.operatorId > 0)
+      line += QStringLiteral(" op:") +
+              opNames.value(static_cast<qlonglong>(r.operatorId),
+                            QStringLiteral("#") + QString::number(r.operatorId));
+    m[QStringLiteral("line")] = line;
+    m[QStringLiteral("payload")] = payload;
+    m[QStringLiteral("id")] = static_cast<qlonglong>(r.id);
+    l.append(m);
+  }
+  return l;
+}
+
+int AppCore::auditCount(const QString& category) {
+  if (!audit_) return 0;
+  audit::EventQuery q;
+  q.category = category.toStdString();
+  return static_cast<int>(audit_->countEvents(q));
+}
+
+QVariantList AppCore::exportTargets() const {
+  QVariantList l;
+  const auto vols = QStorageInfo::mountedVolumes();
+  for (const QStorageInfo& v : vols) {
+    if (!v.isValid() || !v.isReady() || v.isReadOnly()) continue;
+    QVariantMap m;
+    m[QStringLiteral("name")] = v.displayName();
+    m[QStringLiteral("path")] = v.rootPath();
+    m[QStringLiteral("freeMB")] =
+        static_cast<qlonglong>(v.bytesAvailable() / (1024 * 1024));
+    l.append(m);
+  }
+  return l;
+}
+
+QVariantMap AppCore::exportAuditTo(const QString& destDir, int rangeMode,
+                                   qlonglong sinceMs) {
+  QVariantMap out;
+  if (!audit_) {
+    out[QStringLiteral("ok")] = false;
+    out[QStringLiteral("error")] = QStringLiteral("审计未启用");
+    return out;
+  }
+  const qlonglong now = QDateTime::currentMSecsSinceEpoch();
+  qlonglong since = -1;
+  if (rangeMode == 1) since = now - 30LL * 24 * 3600 * 1000;
+  else if (rangeMode == 2) since = now - 90LL * 24 * 3600 * 1000;
+  else if (rangeMode == 3 && sinceMs > 0) since = sinceMs;
+
+  audit::ExportOptions o;
+  o.destDir = destDir.toStdString();
+  o.sinceWall = since;
+  o.appVersion = APP_VERSION;
+  // deviceId：T3 板卡冻结后接设备 SN（当前 DEV-UNSET，写入清单可追溯）
+  const audit::ExportResult r = audit::exportAudit(*audit_, o);
+
+  out[QStringLiteral("ok")] = r.ok;
+  out[QStringLiteral("error")] = QString::fromStdString(r.error);
+  out[QStringLiteral("events")] = static_cast<qlonglong>(r.eventCount);
+  out[QStringLiteral("snapshots")] = static_cast<qlonglong>(r.snapshotCount);
+  out[QStringLiteral("csvName")] = QFileInfo(QString::fromStdString(r.csvPath)).fileName();
+  out[QStringLiteral("jsonName")] =
+      QFileInfo(QString::fromStdString(r.jsonPath)).fileName();
+  out[QStringLiteral("manifest")] =
+      QFileInfo(QString::fromStdString(r.manifestPath)).fileName();
+  out[QStringLiteral("manifestSha")] =
+      QString::fromStdString(r.manifestSha256).left(16);
+  out[QStringLiteral("csvSha")] = QString::fromStdString(r.csvSha256).left(16);
+  out[QStringLiteral("jsonSha")] = QString::fromStdString(r.jsonSha256).left(16);
+  out[QStringLiteral("chainVerified")] = r.chainVerified;
+
+  if (r.ok)
+    emit toast(QStringLiteral("✔ 审计已导出：%1 条事件 + %2 条快照（清单含 SHA256，"
+                              "EXPORT 事件已留痕）")
+                   .arg(r.eventCount)
+                   .arg(r.snapshotCount),
+               QStringLiteral("ok"), 3500);
+  else
+    emit toast(QStringLiteral("导出失败：") + QString::fromStdString(r.error),
+               QStringLiteral("err"), 4000);
+  return out;
 }
 
 }  // namespace massage::app

@@ -201,6 +201,53 @@ int main(int argc, char** argv) {
     }
   }
 
+  // ---- M4b：查询接口（审计记录页的 QML 后端）----
+  {
+    const int total = core.auditCount(QString());
+    CHECK(total > 10);
+    CHECK(core.auditCount(QStringLiteral("therapy")) >= 5);
+    const QVariantList page = core.auditPage(0, 5, QString());
+    CHECK(page.size() == 5);  // 最新在前
+    const QVariantMap first = page.first().toMap();
+    CHECK(first.value(QStringLiteral("line")).toString().size() > 10);
+    CHECK(first.contains(QStringLiteral("payload")));
+    // 类别过滤：therapy 页每行都带 [therapy] 标签
+    const QVariantList tp = core.auditPage(0, 10, QStringLiteral("therapy"));
+    CHECK(tp.size() >= 5);
+    for (const QVariant& v : tp)
+      CHECK(v.toMap().value(QStringLiteral("line")).toString().contains(
+          QStringLiteral("[therapy]")));
+    // 分页不重叠
+    const QVariantList p2 = core.auditPage(5, 5, QString());
+    CHECK(p2.size() == 5);
+    CHECK(p2.first().toMap().value(QStringLiteral("id")) !=
+          first.value(QStringLiteral("id")));
+    core.exportTargets();  // 挂载卷枚举：数量随环境，只验证不崩溃
+  }
+
+  // ---- M4b：AppCore 导出接口（DoD#3 Qt 侧接线）----
+  {
+    std::filesystem::create_directories(tmp / "export", ec);
+    const QVariantMap exp = core.exportAuditTo(
+        QString::fromStdString((tmp / "export").string()), /*全量=*/0, 0);
+    CHECK(exp.value(QStringLiteral("ok")).toBool());
+    CHECK(exp.value(QStringLiteral("events")).toLongLong() > 10);
+    if (!exp.value(QStringLiteral("ok")).toBool())
+      std::printf("  export error: %s\n",
+                  qPrintable(exp.value(QStringLiteral("error")).toString()));
+    // 导出目录里应有 csv/json/manifest 三件套
+    int nCsv = 0, nJson = 0, nMan = 0;
+    for (auto& e : std::filesystem::directory_iterator(tmp / "export")) {
+      const std::string fn = e.path().filename().string();
+      if (fn.rfind("audit_events_", 0) == 0) ++nCsv;
+      else if (fn.rfind("audit_full_", 0) == 0) ++nJson;
+      else if (fn.rfind("audit_manifest_", 0) == 0) ++nMan;
+    }
+    CHECK(nCsv == 1);
+    CHECK(nJson == 1);
+    CHECK(nMan == 1);
+  }
+
   // ---- 链完整性 + 物理完整性（D21）----
   long long broken = -1;
   CHECK(auditDb.verifyChain(broken));

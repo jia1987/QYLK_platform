@@ -76,6 +76,9 @@ class AuditLog {
   std::vector<EventRow> queryEvents(const EventQuery& q);
   long long countEvents(const EventQuery& q);
   std::vector<SnapshotRow> querySnapshots(long long sessionId, int limit = 4096);
+  // 跨会话按时间范围取快照（导出用，D22）
+  std::vector<SnapshotRow> querySnapshotsRange(long long sinceWall, long long untilWall,
+                                               int limit = 100000000);
 
   // ---- 完整性（D21）----
   bool verifyChain(long long& brokenAtEventId);

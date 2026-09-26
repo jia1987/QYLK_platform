@@ -22,6 +22,7 @@ endfunction()
 add_audit_test(test_sha256)
 add_audit_test(test_pin_guard)
 add_audit_test(test_audit_log)
+add_audit_test(test_audit_export)
 
 # 崩溃/断电完整性：测试需重新执行自身（子进程 _Exit 硬杀），argv[1] 注入完整路径
 add_executable(test_audit_crash test_audit_crash.cpp)

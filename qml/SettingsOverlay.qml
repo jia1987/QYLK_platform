@@ -1,4 +1,5 @@
 // 系统设置面板（原型 ⚙ 面板扩展）：PIN 门禁（决策 D9）+ 时间/医院/串口/绑定维护（决策 D2）
+// + M4b：操作员管理（D14）、审计记录查询（D23）、审计导出（D22）
 import QtQuick 2.12
 import QtQuick.Controls 2.12
 
@@ -10,13 +11,30 @@ Rectangle {
     property int burnSlot: -1
     property string burnStatus: ""
     property var binds: []
+    // ---- M4b 状态 ----
+    property var ops: []                 // 操作员名单
+    property var auditRows: []           // 当前页审计事件
+    property string auditCat: ""         // 类别过滤（""=全部）
+    property int auditPageIdx: 0
+    property int auditTotal: 0
+    readonly property int auditPageSize: 30
+    property var exportDevs: []          // 可写挂载卷（U盘）
+    property int exportSel: -1
+    property int exportRange: 0          // 0全量 1近30天 2近90天
+    property string exportStatus: ""
 
     function open() {
         overlay.visible = true;
         overlay.unlocked = !App.pinSet;
         overlay.burnSlot = -1;
         overlay.burnStatus = "";
+        overlay.auditPageIdx = 0;
+        overlay.exportSel = -1;
+        overlay.exportStatus = "";
         reload();
+        reloadOps();
+        reloadAudit();
+        reloadExports();
         pinIn.text = ""; pinNew1.text = ""; pinNew2.text = "";
         hospIn.text = App.hospitalText(); deptIn.text = App.departmentText();
         portIn.text = App.serialPortText(); baudIn.text = String(App.baudRate());
@@ -24,6 +42,12 @@ Rectangle {
     }
     function close() { overlay.visible = false; overlay.unlocked = false; }
     function reload() { binds = App.bindingInfos(); }
+    function reloadOps() { ops = App.operatorList(); }
+    function reloadAudit() {
+        auditTotal = App.auditCount(auditCat);
+        auditRows = App.auditPage(auditPageIdx * auditPageSize, auditPageSize, auditCat);
+    }
+    function reloadExports() { exportDevs = App.exportTargets(); }
 
     MouseArea { anchors.fill: parent; onClicked: overlay.close() }
 
@@ -392,6 +416,403 @@ Rectangle {
                     }
                 }
 
+                // ---- 操作员（M4b · D14）----
+                GroupBox {
+                    width: parent.width
+                    visible: overlay.unlocked
+                    title: ""
+                    padding: 14
+                    background: Rectangle { color: "#21252C"; radius: 14; border.color: "#39404E"; border.width: 1.5 }
+                    Column {
+                        width: parent.width
+                        spacing: 10
+                        Text { text: "👤 操作员（治疗记录归属 · 名单变更入审计）"; color: "#A7B0BF"; font.pixelSize: 14; font.weight: Font.Black; font.letterSpacing: 1 }
+                        Row {
+                            spacing: 10
+                            TextField {
+                                id: opName
+                                width: 170
+                                placeholderText: "姓名"
+                                color: "#ECF0F7"; font.pixelSize: 14
+                                background: Rectangle { color: "#4d000000"; radius: 10; border.color: opName.activeFocus ? "#4DA3FF" : "#39404E" }
+                            }
+                            TextField {
+                                id: opCode
+                                width: 140
+                                placeholderText: "工号（可选）"
+                                color: "#ECF0F7"; font.pixelSize: 14
+                                background: Rectangle { color: "#4d000000"; radius: 10; border.color: opCode.activeFocus ? "#4DA3FF" : "#39404E" }
+                            }
+                            Rectangle {
+                                width: 90; height: 40; radius: 10
+                                color: opAddMa.containsMouse ? "#5ab0ff" : "#4DA3FF"
+                                Text { anchors.centerIn: parent; text: "添加"; color: "#0B1220"; font.pixelSize: 14; font.weight: Font.Black }
+                                MouseArea {
+                                    id: opAddMa
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: {
+                                        if (opName.text.trim().length === 0) return;
+                                        var nid = App.addOperator(opName.text.trim(), opCode.text.trim());
+                                        if (nid > 0) { opName.text = ""; opCode.text = ""; }
+                                    }
+                                }
+                            }
+                        }
+                        Repeater {
+                            model: overlay.ops
+                            Rectangle {
+                                width: parent.width
+                                height: 42
+                                radius: 10
+                                color: modelData.current ? "#1D3A5C" : "#282E39"
+                                border { color: modelData.current ? "#4DA3FF" : "#39404E"; width: 1 }
+                                Row {
+                                    anchors { verticalCenter: parent.verticalCenter; left: parent.left; leftMargin: 12; right: parent.right; rightMargin: 12 }
+                                    spacing: 10
+                                    Text {
+                                        text: modelData.name + (modelData.code.length > 0 ? "（" + modelData.code + "）" : "")
+                                        color: "#ECF0F7"
+                                        font.pixelSize: 14
+                                        width: 200
+                                        elide: Text.ElideRight
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Text {
+                                        text: modelData.current ? "● 当前" : ""
+                                        color: "#4DA3FF"
+                                        font.pixelSize: 12
+                                        font.weight: Font.Black
+                                        width: 50
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Rectangle {
+                                        width: 84; height: 30; radius: 8
+                                        visible: !modelData.current
+                                        color: opSelMa.containsMouse ? "#303744" : "#21252C"
+                                        border { color: "#4DA3FF"; width: 1 }
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        Text { anchors.centerIn: parent; text: "选为当前"; color: "#4DA3FF"; font.pixelSize: 12; font.weight: Font.Bold }
+                                        MouseArea { id: opSelMa; anchors.fill: parent; hoverEnabled: true; onClicked: App.setCurrentOperator(modelData.id) }
+                                    }
+                                    Rectangle {
+                                        width: 60; height: 30; radius: 8
+                                        color: opDelMa.containsMouse ? "#3a2020" : "#2a1a1c"
+                                        border { color: "#8f3a3a"; width: 1 }
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        Text { anchors.centerIn: parent; text: "移除"; color: "#EF4444"; font.pixelSize: 12; font.weight: Font.Bold }
+                                        MouseArea { id: opDelMa; anchors.fill: parent; hoverEnabled: true; onClicked: App.removeOperator(modelData.id) }
+                                    }
+                                }
+                            }
+                        }
+                        Text {
+                            width: parent.width
+                            wrapMode: Text.Wrap
+                            text: "当前操作员：" + (App.currentOperatorName.length > 0 ? App.currentOperatorName : "未指定") +
+                                  " —— 显示于启动确认弹窗，并写入每条治疗审计（未指定不阻止启动）"
+                            color: "#707A8A"
+                            font.pixelSize: 11
+                        }
+                    }
+                }
+
+                // ---- 审计记录（M4b · D23）----
+                GroupBox {
+                    width: parent.width
+                    visible: overlay.unlocked
+                    title: ""
+                    padding: 14
+                    background: Rectangle { color: "#21252C"; radius: 14; border.color: "#39404E"; border.width: 1.5 }
+                    Column {
+                        width: parent.width
+                        spacing: 10
+                        Text { text: "📜 审计记录（只增不删 · 触发器+链式哈希防篡改 · D21）"; color: "#A7B0BF"; font.pixelSize: 14; font.weight: Font.Black; font.letterSpacing: 1 }
+                        Row {
+                            spacing: 8
+                            Rectangle { width: 10; height: 10; radius: 5; anchors.verticalCenter: parent.verticalCenter; color: App.auditOk ? "#22C55E" : "#EF4444" }
+                            Text {
+                                text: App.auditOk ? "审计正常" : "⚠ 审计降级：文件兜底记录中（D13），恢复后自动回填"
+                                color: App.auditOk ? "#22C55E" : "#EF4444"
+                                font.pixelSize: 12
+                                font.weight: Font.Bold
+                            }
+                        }
+                        Flow {
+                            width: parent.width
+                            spacing: 6
+                            Repeater {
+                                model: [["", "全部"], ["therapy", "治疗"], ["fault", "故障"], ["presence", "在位"],
+                                        ["access", "访问"], ["config", "配置"], ["clock", "时钟"], ["session", "会话"], ["audit", "审计"]]
+                                Rectangle {
+                                    width: catTxt.implicitWidth + 22
+                                    height: 28
+                                    radius: 8
+                                    color: overlay.auditCat === modelData[0] ? "#4DA3FF" : "#282E39"
+                                    border { color: "#39404E"; width: 1 }
+                                    Text {
+                                        id: catTxt
+                                        anchors.centerIn: parent
+                                        text: modelData[1]
+                                        color: overlay.auditCat === modelData[0] ? "#0B1220" : "#A7B0BF"
+                                        font.pixelSize: 12
+                                        font.weight: Font.Bold
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        onClicked: {
+                                            overlay.auditCat = modelData[0];
+                                            overlay.auditPageIdx = 0;
+                                            overlay.reloadAudit();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle {
+                            width: parent.width
+                            height: 260
+                            radius: 10
+                            color: "#12151B"
+                            border { color: "#39404E"; width: 1 }
+                            ListView {
+                                id: auditList
+                                anchors { fill: parent; margins: 8 }
+                                clip: true
+                                model: overlay.auditRows
+                                spacing: 4
+                                boundsBehavior: Flickable.StopAtBounds
+                                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                                delegate: Column {
+                                    width: auditList.width
+                                    spacing: 0
+                                    Text {
+                                        width: parent.width
+                                        text: modelData.line
+                                        color: "#C9D2DF"
+                                        font.pixelSize: 11
+                                        font.family: "Consolas"
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        width: parent.width
+                                        text: modelData.payload
+                                        color: "#5A6270"
+                                        font.pixelSize: 10
+                                        font.family: "Consolas"
+                                        elide: Text.ElideRight
+                                        visible: modelData.payload.length > 0
+                                    }
+                                }
+                            }
+                            Text {
+                                anchors.centerIn: parent
+                                visible: overlay.auditRows.length === 0
+                                text: "（无记录）"
+                                color: "#5A6270"
+                                font.pixelSize: 13
+                            }
+                        }
+                        Row {
+                            spacing: 10
+                            Rectangle {
+                                width: 88; height: 32; radius: 8
+                                color: pgPrevMa.containsMouse ? "#303744" : "#282E39"
+                                border { color: "#39404E"; width: 1 }
+                                opacity: overlay.auditPageIdx > 0 ? 1.0 : 0.4
+                                Text { anchors.centerIn: parent; text: "← 上一页"; color: "#A7B0BF"; font.pixelSize: 12 }
+                                MouseArea {
+                                    id: pgPrevMa
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: {
+                                        if (overlay.auditPageIdx > 0) {
+                                            overlay.auditPageIdx--;
+                                            overlay.reloadAudit();
+                                        }
+                                    }
+                                }
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "第 " + (overlay.auditPageIdx + 1) + " / " +
+                                      Math.max(1, Math.ceil(overlay.auditTotal / overlay.auditPageSize)) +
+                                      " 页 · 共 " + overlay.auditTotal + " 条（最新在前）"
+                                color: "#707A8A"
+                                font.pixelSize: 12
+                            }
+                            Rectangle {
+                                width: 88; height: 32; radius: 8
+                                color: pgNextMa.containsMouse ? "#303744" : "#282E39"
+                                border { color: "#39404E"; width: 1 }
+                                opacity: (overlay.auditPageIdx + 1) * overlay.auditPageSize < overlay.auditTotal ? 1.0 : 0.4
+                                Text { anchors.centerIn: parent; text: "下一页 →"; color: "#A7B0BF"; font.pixelSize: 12 }
+                                MouseArea {
+                                    id: pgNextMa
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: {
+                                        if ((overlay.auditPageIdx + 1) * overlay.auditPageSize < overlay.auditTotal) {
+                                            overlay.auditPageIdx++;
+                                            overlay.reloadAudit();
+                                        }
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                width: 64; height: 32; radius: 8
+                                color: pgRefMa.containsMouse ? "#303744" : "#282E39"
+                                border { color: "#39404E"; width: 1 }
+                                Text { anchors.centerIn: parent; text: "刷新"; color: "#A7B0BF"; font.pixelSize: 12 }
+                                MouseArea { id: pgRefMa; anchors.fill: parent; hoverEnabled: true; onClicked: overlay.reloadAudit() }
+                            }
+                        }
+                    }
+                }
+
+                // ---- 审计导出（M4b · D22）----
+                GroupBox {
+                    width: parent.width
+                    visible: overlay.unlocked
+                    title: ""
+                    padding: 14
+                    background: Rectangle { color: "#21252C"; radius: 14; border.color: "#39404E"; border.width: 1.5 }
+                    Column {
+                        width: parent.width
+                        spacing: 10
+                        Text { text: "💾 审计导出（U盘 · CSV+JSON+SHA256 清单 · 导出留痕）"; color: "#A7B0BF"; font.pixelSize: 14; font.weight: Font.Black; font.letterSpacing: 1 }
+                        Row {
+                            spacing: 10
+                            Rectangle {
+                                width: 100; height: 34; radius: 8
+                                color: expRefMa.containsMouse ? "#303744" : "#282E39"
+                                border { color: "#39404E"; width: 1 }
+                                Text { anchors.centerIn: parent; text: "刷新设备"; color: "#A7B0BF"; font.pixelSize: 12 }
+                                MouseArea { id: expRefMa; anchors.fill: parent; hoverEnabled: true; onClicked: overlay.reloadExports() }
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: overlay.exportDevs.length + " 个可写卷"
+                                color: "#707A8A"
+                                font.pixelSize: 12
+                            }
+                        }
+                        Repeater {
+                            model: overlay.exportDevs
+                            Rectangle {
+                                width: parent.width
+                                height: 38
+                                radius: 10
+                                color: overlay.exportSel === index ? "#1D3A5C" : "#282E39"
+                                border { color: overlay.exportSel === index ? "#4DA3FF" : "#39404E"; width: 1 }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: { overlay.exportSel = index; expDirIn.text = ""; }
+                                }
+                                Row {
+                                    anchors { verticalCenter: parent.verticalCenter; left: parent.left; leftMargin: 12; right: parent.right; rightMargin: 12 }
+                                    spacing: 8
+                                    Text {
+                                        text: (overlay.exportSel === index ? "● " : "○ ") + modelData.name + "  " + modelData.path
+                                        color: overlay.exportSel === index ? "#4DA3FF" : "#ECF0F7"
+                                        font.pixelSize: 13
+                                        font.family: "Consolas"
+                                        elide: Text.ElideMiddle
+                                        width: parent.width - 110
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Text {
+                                        text: "剩余 " + modelData.freeMB + " MB"
+                                        color: "#707A8A"
+                                        font.pixelSize: 11
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                }
+                            }
+                        }
+                        TextField {
+                            id: expDirIn
+                            width: parent.width
+                            placeholderText: "或输入目标目录路径（开发调试用；填写后优先于上方所选卷）"
+                            color: "#ECF0F7"; font.pixelSize: 13; font.family: "Consolas"
+                            background: Rectangle { color: "#4d000000"; radius: 10; border.color: expDirIn.activeFocus ? "#4DA3FF" : "#39404E" }
+                            onTextChanged: {
+                                if (expDirIn.text.length > 0) overlay.exportSel = -1;
+                            }
+                        }
+                        Row {
+                            spacing: 6
+                            Repeater {
+                                model: [["全量", 0], ["近30天", 1], ["近90天", 2]]
+                                Rectangle {
+                                    width: rngTxt.implicitWidth + 22
+                                    height: 28
+                                    radius: 8
+                                    color: overlay.exportRange === modelData[1] ? "#4DA3FF" : "#282E39"
+                                    border { color: "#39404E"; width: 1 }
+                                    Text {
+                                        id: rngTxt
+                                        anchors.centerIn: parent
+                                        text: modelData[0]
+                                        color: overlay.exportRange === modelData[1] ? "#0B1220" : "#A7B0BF"
+                                        font.pixelSize: 12
+                                        font.weight: Font.Bold
+                                    }
+                                    MouseArea { anchors.fill: parent; onClicked: overlay.exportRange = modelData[1] }
+                                }
+                            }
+                        }
+                        Rectangle {
+                            width: 160; height: 42; radius: 10
+                            color: expGoMa.containsMouse ? "#00b956" : "#00A94F"
+                            Text { anchors.centerIn: parent; text: "导出到目标"; color: "#fff"; font.pixelSize: 15; font.weight: Font.Black }
+                            MouseArea {
+                                id: expGoMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    var dir = expDirIn.text.trim();
+                                    if (dir.length === 0 && overlay.exportSel >= 0 && overlay.exportSel < overlay.exportDevs.length)
+                                        dir = overlay.exportDevs[overlay.exportSel].path;
+                                    if (dir.length === 0) {
+                                        overlay.exportStatus = "✘ 请先选择导出目标（U盘或目录）";
+                                        return;
+                                    }
+                                    overlay.exportStatus = "导出中…";
+                                    var r = App.exportAuditTo(dir, overlay.exportRange, 0);
+                                    if (r.ok) {
+                                        overlay.exportStatus = "✔ 导出 " + r.events + " 条事件 + " + r.snapshots +
+                                                " 条快照\n文件：" + r.csvName + " · " + r.jsonName +
+                                                "\n清单：" + r.manifest + "（SHA256 前缀 " + r.manifestSha + "…）" +
+                                                "\n导出时链校验：" + (r.chainVerified ? "通过 ✔" : "未通过 ✘ 请检查审计库！");
+                                        overlay.auditPageIdx = 0;
+                                        overlay.reloadAudit();
+                                    } else {
+                                        overlay.exportStatus = "✘ " + r.error;
+                                    }
+                                }
+                            }
+                        }
+                        Text {
+                            width: parent.width
+                            wrapMode: Text.Wrap
+                            text: overlay.exportStatus
+                            visible: overlay.exportStatus.length > 0
+                            color: overlay.exportStatus.indexOf("✔") === 0 ? "#22C55E" : (overlay.exportStatus.indexOf("✘") === 0 ? "#EF4444" : "#A7B0BF")
+                            font.pixelSize: 12
+                            font.family: "Consolas"
+                            lineHeight: 1.3
+                        }
+                        Text {
+                            width: parent.width
+                            wrapMode: Text.Wrap
+                            text: "导出件可用 sha256sum 独立复核清单哈希；EXPORT 事件（含逐文件 SHA256）已写入设备审计库——导出件与库内记录互为凭证（D22）"
+                            color: "#707A8A"
+                            font.pixelSize: 11
+                        }
+                    }
+                }
+
                 Text {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
@@ -413,5 +834,8 @@ Rectangle {
             overlay.burnStatus = ok ? "✔ 烧录成功" : ("✘ " + msg);
             overlay.reload();
         }
+        onAuditStateChanged: overlay.reloadAudit()   // 降级/恢复 → 状态灯与列表刷新
+        onOperatorsChanged: overlay.reloadOps()
+        onCurrentOperatorChanged: overlay.reloadOps()
     }
 }

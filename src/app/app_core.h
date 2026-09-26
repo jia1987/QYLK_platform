@@ -96,6 +96,15 @@ class AppCore : public QObject {
   Q_INVOKABLE void removeOperator(qlonglong id);            // 软删（审计留痕）
   Q_INVOKABLE void setCurrentOperator(qlonglong id);        // 治疗前选人，记住上次
   Q_INVOKABLE void snapshotNow();                           // 立即写会话快照（30s 定时/测试用）
+
+  // ---- M4b 审计查询与导出（D22/D23）----
+  // 分页查询（最新在前）；category 空 = 全部。返回 [{line,payload,id},…]
+  Q_INVOKABLE QVariantList auditPage(int offset, int limit, const QString& category);
+  Q_INVOKABLE int auditCount(const QString& category);
+  Q_INVOKABLE QVariantList exportTargets() const;           // 可写挂载卷（U盘）
+  // rangeMode: 0=全量 1=近30天 2=近90天 3=自定义(sinceMs)
+  Q_INVOKABLE QVariantMap exportAuditTo(const QString& destDir, int rangeMode,
+                                        qlonglong sinceMs);
   Q_INVOKABLE void saveIdentity(const QString& hospital, const QString& department);
   Q_INVOKABLE void saveSerial(const QString& port, int baud);  // 重启生效
   Q_INVOKABLE void setSystemTime(const QString& isoDateTime);  // 仅 Linux（timedatectl）
