@@ -30,6 +30,8 @@ class MockBus : public QObject, public core::ITransport {
   // 调试辅助：注入/清除板载故障（对齐 rs485_sim.py 的 fault/clear 命令，M4a 审计联调用）
   void setFault(std::uint8_t addr, std::uint8_t faultBits);
   void clearFault(std::uint8_t addr);
+  // 调试辅助：读回缓启动参数（SRS-022 断言用；0xFF=无此地址）
+  std::uint8_t softStart(std::uint8_t addr) const;
 
  private:
   struct MHead {
@@ -40,7 +42,7 @@ class MockBus : public QObject, public core::ITransport {
     int dir = 0;  // 0=A 1=B
     std::uint8_t fault = 0;
     double temp = 32.0;
-    std::uint8_t soft = 0x10;
+    std::uint8_t soft = 0x01;  // 真实板卡出厂默认（ISS-011：主机上线写 0x54 后变 0x10）
     bool closedLoop = true;
     std::uint8_t polePairs = 2;
     double position = 0.0;

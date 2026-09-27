@@ -1,3 +1,4 @@
+// @srs SRS-013 SRS-014 SRS-015 SRS-016 SRS-017 SRS-020 SRS-042
 #pragma once
 // BusScheduler —— RS485 半双工总线调度（决策 D5）。
 // 严格一问一答：同一时刻最多一个在途事务；控制帧插队优先；

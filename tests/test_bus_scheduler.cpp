@@ -1,3 +1,4 @@
+// @srs SRS-013 SRS-014 SRS-015 SRS-016 SRS-017 SRS-042
 // BusScheduler 单测 —— 决策 D5：半双工一问一答、轮询计划、超时重试、
 // 离线判定与恢复、控制帧插队、应答严格匹配。FakeClock+MockTransport 全离线。
 #include <vector>

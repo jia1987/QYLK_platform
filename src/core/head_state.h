@@ -1,3 +1,4 @@
+// @srs SRS-030 SRS-031 SRS-032 SRS-033 SRS-034 SRS-040 SRS-041 SRS-042 SRS-044 SRS-050 SRS-051 SRS-052 SRS-053
 #pragma once
 // TreatmentHead —— 单治疗头状态机 + 倒计时 + 曲线推进（决策 D3/D4）。
 // 纯逻辑：无时钟无串口。外部以 tick(dt) 驱动、以 onXxx() 注入设备事件，

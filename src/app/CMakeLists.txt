@@ -1,3 +1,4 @@
+# @srs SRS-004 SRS-006
 # Qt 应用层（M3）：QML UI + 传输适配。核心逻辑在 massage_core（零 Qt 依赖）。
 find_package(Qt${QT_VERSION_MAJOR} COMPONENTS SerialPort QUIET)
 

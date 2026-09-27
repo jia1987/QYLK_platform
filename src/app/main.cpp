@@ -1,3 +1,4 @@
+// @srs SRS-004 SRS-005 SRS-006 SRS-018 SRS-054 SRS-055 SRS-092
 // 台式按摩仪多设备控制软件 —— 应用入口。
 // 默认模拟总线（进程内 MockBus）；--serial <port> 使用真实 485（需 Qt SerialPort）。
 #include <QCommandLineParser>

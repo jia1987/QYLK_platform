@@ -1,3 +1,4 @@
+// @srs SRS-116
 // 频率-时间示意波形（原型 .ft svg 的 Canvas 移植）：
 // mode 0=恒频(直线) 1=扫频(三角波) 2=阶频(双梯形循环)
 import QtQuick 2.12

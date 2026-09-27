@@ -1,3 +1,4 @@
+# @srs SRS-001 SRS-002 SRS-003 SRS-006
 cmake_minimum_required(VERSION 3.16)
 project(massage_controller VERSION 0.3.0 LANGUAGES C CXX)
 

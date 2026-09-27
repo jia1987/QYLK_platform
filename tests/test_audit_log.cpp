@@ -1,3 +1,4 @@
+// @srs SRS-055 SRS-074 SRS-080 SRS-081 SRS-082 SRS-083 SRS-085 SRS-088 SRS-089 SRS-090 SRS-091 SRS-092 SRS-093 SRS-094 SRS-095 SRS-099 SRS-102
 // AuditLog 引擎单测（M4a，决策 D13–D22 的逐条可执行证据）：
 //   T1 schema+会话启动   T2 会话哨兵（正常/异常关闭）  T3 三列时间戳+payload 保真
 //   T4 触发器防删改      T5 链式哈希+触发器失守兜底     T6 降级 NDJSON+恢复回填

@@ -1,3 +1,4 @@
+// @srs SRS-018 SRS-022 SRS-040 SRS-043 SRS-052 SRS-060 SRS-061 SRS-062 SRS-063 SRS-064 SRS-070 SRS-071 SRS-072 SRS-073 SRS-075 SRS-084 SRS-085 SRS-086 SRS-087 SRS-093 SRS-097 SRS-099 SRS-103 SRS-113 SRS-115 SRS-117 SRS-118
 #pragma once
 // AppCore —— 应用装配层：BusScheduler + 6×TreatmentHead + 配置 + QML API。
 // 线程模型：全部在主线程（QTimer 驱动），总线事务由 BusScheduler 状态机管理。

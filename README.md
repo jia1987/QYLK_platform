@@ -84,7 +84,7 @@ Ubuntu（目标板/WSL）：`sudo apt install libqt5serialport5-dev`（Qt 5.12 �
   ctest 5/5 全绿（含 `maint_burn` 烧录联锁集成测试）；socat 虚拟串口对 + `rs485_sim.py` ⇄ `massage_app --serial` 闭环联调：
   启动停止帧覆盖地址 1–6、CRC/应答帧全部正确，GUI 经 WSLg 正常存活。环境：发行版位于 `C:\WSL\Ubuntu-20.04`，
   源码副本 `~/massage`（自 `/mnt/e` 手动同步），apt 用清华源（focal 已 EOL，官方源失效）
-- [ ] **M4 合规与审计**（grill-me 五轮已完成 2026-09-26：决策 **D13–D32** 锁定于设计文档 §7，含冻结事件表与新待办 T9/T10）：
+- [x] **M4 合规与审计**（2026-09-26 完成；grill-me 五轮：决策 **D13–D32** 锁定于设计文档 §7，冻结事件表 + 待办 T9–T12）：
   - [x] **M4a 审计引擎**（2026-09-26，Windows MinGW/Qt6.9 + WSL Qt5.12.8 双平台 ctest 10/10 全绿）：
     纯 C++ sqlite3 嵌入（零 Qt 依赖，SQLite 3.53.4 入仓 third_party/）、WAL+FULL 断电零丢失（子进程 _Exit 硬杀实测）、
     触发器+链式 SHA256 防篡改（DROP TRIGGER 后篡改仍被链校验抓获）、三列时间戳（wall+mono+boot_seq）、
@@ -97,7 +97,13 @@ Ubuntu（目标板/WSL）：`sudo apt install libqt5serialport5-dev`（Qt 5.12 �
     导出（QStorageInfo 枚举可写卷/自定义目录、全量/近30天/近90天、CSV+BOM/JSON/SHA256 清单三件套、
     导出时链校验结果写入清单、EXPORT 事件含逐文件哈希）；导出引擎 `audit_export.*` 纯 C++（RFC4180 转义、
     中文 payload torture 测试、独立重算哈希比对、范围过滤、目标不可写防御）
-  - [ ] **M4c 文档链**：12 份中文 md（URD/SRS/SAD/SDD/RM/TRM/VR/SOUP/ISSUES/VC/PLAN/索引）+ SRS ID 嵌 ctest 测试名 + 矩阵脚本生成
+  - [x] **M4c 文档链**（2026-09-26）：`docs/` 12 份中文文档全部就位 —— 索引与编号规则 / URD 17 条 /
+    **SRS 84 条**（每条挂 URD/D 来源+验证方式）/ SAD 架构 / SDD 详设（B级结构高一档，D26）/
+    RM 风险分析（18 危险源，含控制措施↔测试证据↔剩余风险）/ **TRM 追溯矩阵（`tools/trm/gen_trm.py`
+    从 @srs 注解自动生成，`--check` 零缺口门禁，DoD#4 达成：84 条 SRS=80 完整+4 推迟在案+0 缺口）**/
+    VR 验证记录（双平台 626 断言逐项一致基线）/ SOUP 清单 / ISSUES 日志（回填历史 10 项+M4 期 5 项）/
+    VC 版本规则（0.3.0→注册冻结 1.0.0 路径）/ PLAN 开发计划；ctest 注册名嵌主 SRS ID（`ctest -N` 可读）；
+    **SRS 反推发现并修复 ISS-011**：缓启动 0x54 从未写入板卡（模拟器默认值掩盖），头上线即下发+双模拟器出厂值对齐真实板卡
   - ~~WSL Qt5.12 终验~~（已随 M3.6 完成）
 
 ## 关键约束（详见设计文档）

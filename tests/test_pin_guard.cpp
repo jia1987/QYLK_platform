@@ -1,3 +1,4 @@
+// @srs SRS-072
 // PinGuard 单测（决策 D20）：5 次失败锁 5 分钟、单调钟计时、惰性解除、成功清零。
 #include "audit/pin_guard.h"
 

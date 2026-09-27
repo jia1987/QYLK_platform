@@ -1,3 +1,4 @@
+// @srs SRS-089 SRS-096
 // SHA-256 单测（NIST FIPS 180-4 标准向量）——审计链式哈希的算法基础（D21）。
 #include <string>
 

@@ -84,6 +84,11 @@ void MockBus::clearFault(std::uint8_t addr) {
   if (it != heads_.end()) it->second.fault = 0;
 }
 
+std::uint8_t MockBus::softStart(std::uint8_t addr) const {
+  auto it = heads_.find(addr);
+  return it != heads_.end() ? it->second.soft : 0xFF;
+}
+
 bool MockBus::send(const Frame& f) {
   if (!masterFrameOk(f)) return true;  // 坏帧：静默丢弃（协议规定无应答）
   handle(f);

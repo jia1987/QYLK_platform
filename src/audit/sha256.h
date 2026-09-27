@@ -1,3 +1,4 @@
+// @srs SRS-089 SRS-096
 #pragma once
 // SHA-256（FIPS 180-4）——审计链式哈希（决策 D21）与导出清单（D22）用。
 // 零第三方依赖，NIST 标准向量单测覆盖（test_sha256）。

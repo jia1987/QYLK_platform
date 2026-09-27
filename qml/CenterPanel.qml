@@ -1,3 +1,4 @@
+// @srs SRS-110 SRS-116 SRS-117
 // 中央参数调节区（原型 .center）：预设 3 / 模式 2 / 频率时间 5 比例布局 + 锁定层
 import QtQuick 2.12
 

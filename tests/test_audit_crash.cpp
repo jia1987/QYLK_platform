@@ -1,3 +1,4 @@
+// @srs SRS-080 SRS-083 SRS-089
 // 断电/崩溃完整性测试（D18/D19 的可执行证据，DoD#1）：
 //   子进程：打开审计 DB → 写 7 条事件（每条 synchronous=FULL 落盘）→ _Exit 硬杀
 //           （不跑析构、不跑 atexit、不 close —— 与拔电源等价）

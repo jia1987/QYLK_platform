@@ -1,3 +1,4 @@
+// @srs SRS-095
 #pragma once
 // 极简 JSON 工具（零依赖）——审计 payload 构造 + NDJSON 兜底行回放解析（D13）。
 // 只处理本项目自产的扁平 JSON（键 → 标量或单层对象），不是通用解析器：

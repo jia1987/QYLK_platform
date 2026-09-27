@@ -1,3 +1,4 @@
+// @srs SRS-004 SRS-020
 #pragma once
 // QSerialPort 传输适配（ITransport 实现 + StreamFramer 收帧）。
 // 仅在 Qt SerialPort 模块可用时编译（CMake: APP_HAS_SERIALPORT）。

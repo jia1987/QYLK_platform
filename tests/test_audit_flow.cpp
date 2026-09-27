@@ -1,3 +1,4 @@
+// @srs SRS-004 SRS-018 SRS-022 SRS-043 SRS-050 SRS-051 SRS-064 SRS-070 SRS-071 SRS-072 SRS-073 SRS-074 SRS-075 SRS-082 SRS-084 SRS-085 SRS-086 SRS-087 SRS-096 SRS-097 SRS-099 SRS-100 SRS-113 SRS-115
 // M4a 集成测试（DoD#2 的可执行证据）：AppCore + MockBus + AuditLog 完整治疗场次，
 // 断言审计 DB 与事件流逐条一致：
 //   在位→启动→运行中改参(2s防抖)→快照→故障注入→复位→停止→PIN 防暴破→操作员→
@@ -91,6 +92,10 @@ int main(int argc, char** argv) {
   spin(900);
   auto presence = eventsOf(auditDb, audit::cat::Presence);
   CHECK(countType(presence, audit::ev::HeadPlugged) >= 5);  // 6 头全在位（至少 5 已上报）
+
+  // ---- SRS-022（ISS-011）：头上线即写 0x54，缓启动 出厂0x01 → 0x10 ----
+  CHECK(mock.softStart(1) == 0x10);
+  CHECK(mock.softStart(6) == 0x10);
 
   // ---- 启动治疗 → THERAPY_START（含参数快照）----
   // 注意：selectHead 是 toggle 语义（再点取消选择），首个上线头会被自动选中——
@@ -223,6 +228,41 @@ int main(int argc, char** argv) {
     CHECK(p2.first().toMap().value(QStringLiteral("id")) !=
           first.value(QStringLiteral("id")));
     core.exportTargets();  // 挂载卷枚举：数量随环境，只验证不崩溃
+  }
+
+  // ---- SRS-043/087：预设「点一次应用、30s 内再点存为预设」→ SETTING_CHANGED ----
+  core.applyPreset(0);
+  spin(80);
+  core.applyPreset(0);  // 第二次点击 = 存入预设
+  spin(80);
+  {
+    auto cfgEv = eventsOf(auditDb, audit::cat::Config);
+    const EventRow* sc = findType(cfgEv, audit::ev::SettingChanged);
+    CHECK(sc != nullptr);
+    if (sc) CHECK(sc->payload.find("preset_1") != std::string::npos);
+  }
+
+  // ---- SRS-064/087：绑定变更 → BINDING_CHANGED（旧→新）----
+  core.maintSetType(0, QStringLiteral("手法治疗头"));
+  spin(80);
+  {
+    auto cfgEv = eventsOf(auditDb, audit::cat::Config);
+    const EventRow* bc = findType(cfgEv, audit::ev::BindingChanged);
+    CHECK(bc != nullptr);
+    if (bc) {
+      CHECK(bc->payload.find("\"field\":\"type\"") != std::string::npos);
+      CHECK(bc->payload.find("局部治疗头") != std::string::npos);  // 旧值在载荷
+    }
+  }
+
+  // ---- SRS-100：配置持久化往返（setCurrentOperator/存预设均已 save）----
+  {
+    const app::AppConfig fresh = app::AppConfig::loadOrCreate();
+    CHECK(fresh.currentOperatorId == op1);
+    CHECK(fresh.slotList.size() == 6);
+    CHECK(fresh.presets.size() == 6);
+    CHECK(fresh.presets[0].freqHz == cfg.presets[0].freqHz);  // 覆写后的预设已落盘
+    CHECK(fresh.slotList[0].type == QStringLiteral("手法治疗头"));
   }
 
   // ---- M4b：AppCore 导出接口（DoD#3 Qt 侧接线）----

@@ -53,6 +53,13 @@ AppCore::AppCore(AppConfig* cfg, ITransport& transport, bool realBus,
   sched_ = std::make_unique<BusScheduler>(BusConfig{}, transport, clock_);
   sched_->onPresenceChange = [this](std::uint8_t addr, bool online) {
     if (HeadItem* h = findByAddr(addr)) h->deliverPresence(online);
+    // SRS-022（ISS-011 修复）：头上线即写 0x54 限流/缓启动/换向延时——
+    // 真实板卡出厂缓启动 0x01（起步太硬），D3「暂停后柔和恢复」依赖 kSoftStart=0x10。
+    // 板载带记忆，重复写幂等无害；烧录后的新头经本路径自动完成参数初始化。
+    if (online)
+      sched_->enqueueControl(encodeConfigParams(addr, defaults::kCurrentLimit,
+                                                defaults::kSoftStart,
+                                                defaults::kDirDelay));
     // M4a（D24）：在位变化留痕（含 idle 插拔——「不该在位的头出现」必须有记录）
     if (audit_) {
       HeadItem* hh = findByAddr(addr);

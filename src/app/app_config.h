@@ -1,3 +1,4 @@
+// @srs SRS-100 SRS-101 SRS-102
 #pragma once
 // 应用配置持久化（JSON，决策 D10）：槽位绑定、预设、医院信息、PIN、串口。
 #include <QString>

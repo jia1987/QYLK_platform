@@ -1,3 +1,4 @@
+// @srs SRS-035 SRS-036 SRS-037 SRS-038 SRS-039
 // ProfileEngine 单测 —— 决策 D4 冻结曲线参数的行为验证。
 // 数值向量：扫频 10s 三角波；阶频 20s 梯形波（24/26/24/26%，低保持=max(10Hz, f×50%)）。
 #include <cmath>

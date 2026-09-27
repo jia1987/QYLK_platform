@@ -1,3 +1,4 @@
+# @srs SRS-002
 add_library(massage_core STATIC
   crc16.cpp
   frame_codec.cpp

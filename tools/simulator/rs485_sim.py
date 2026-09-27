@@ -81,7 +81,8 @@ class Head:
         self.stall_time = 0x14
         self.pole_pairs = 2
         self.current_limit = 0x4D
-        self.soft_start = 0x10
+        # 真实板卡出厂缓启动 0x01（起步太硬）；主机应在头上线时写 0x54 → 0x10（SRS-022/ISS-011）
+        self.soft_start = 0x01
         # 运行状态
         self.target_rpm = 0
         self.rpm = 0.0

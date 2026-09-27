@@ -1,3 +1,4 @@
+// @srs SRS-003 SRS-055 SRS-074 SRS-080 SRS-081 SRS-083 SRS-088 SRS-089 SRS-090 SRS-091 SRS-092 SRS-093 SRS-094 SRS-095 SRS-099 SRS-102
 #pragma once
 // AuditLog —— 审计追踪引擎（决策 D13–D22，设计方案 §7）。
 // 纯 C++17，零 Qt 依赖（D29：sqlite3 amalgamation 静态嵌入）。

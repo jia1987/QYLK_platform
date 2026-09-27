@@ -1,3 +1,4 @@
+// @srs SRS-096 SRS-097 SRS-098
 #pragma once
 // 审计导出引擎（决策 D22）：CSV（人读/Excel）+ JSON（机读）+ SHA256 清单。
 // 纯 C++（与 AuditLog 同库同待遇，双平台单测）；导出动作本身由本模块写入

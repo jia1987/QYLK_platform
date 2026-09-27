@@ -1,3 +1,4 @@
+# @srs SRS-003
 # 审计追踪引擎（M4a，决策 D13–D22/D29）：纯 C++17，零 Qt 依赖。
 # sqlite3 amalgamation 静态嵌入（third_party/sqlite3，版本溯源见其 SOUP-NOTE.md）。
 find_package(Threads REQUIRED)
